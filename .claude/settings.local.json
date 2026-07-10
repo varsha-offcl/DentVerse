@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm install *)",
+      "Bash(node smoke.mjs)",
+      "Bash(rm -f smoke.mjs)",
+      "Bash(npm uninstall *)",
+      "Bash(timeout 40 node verify.mjs)",
+      "Bash(timeout 90 node verify3.mjs)",
+      "Bash(npm run *)"
+    ]
+  }
+}

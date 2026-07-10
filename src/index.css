@@ -1,0 +1,130 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 189 94% 30%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 199 89% 96%;
+    --secondary-foreground: 189 94% 22%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 189 94% 94%;
+    --accent-foreground: 189 94% 22%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 24 10% 10%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 189 94% 30%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222 32% 8%;
+    --foreground: 210 30% 94%;
+
+    --card: 222 28% 11%;
+    --card-foreground: 210 30% 94%;
+
+    --popover: 222 28% 11%;
+    --popover-foreground: 210 30% 94%;
+
+    --primary: 189 80% 45%;
+    --primary-foreground: 222 32% 8%;
+
+    --secondary: 199 40% 16%;
+    --secondary-foreground: 189 70% 78%;
+
+    --muted: 222 24% 15%;
+    --muted-foreground: 215 15% 65%;
+
+    --accent: 189 45% 18%;
+    --accent-foreground: 189 70% 82%;
+
+    --destructive: 0 70% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 50% 48%;
+    --success-foreground: 222 32% 8%;
+
+    --warning: 38 85% 58%;
+    --warning-foreground: 24 20% 10%;
+
+    --border: 222 20% 20%;
+    --input: 222 20% 20%;
+    --ring: 189 80% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .bg-grid {
+    background-image: radial-gradient(
+      circle,
+      hsl(var(--border)) 1px,
+      transparent 1px
+    );
+    background-size: 24px 24px;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-area,
+  .printable-area * {
+    visibility: visible;
+  }
+  .printable-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    padding: 24px;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
