@@ -19,14 +19,17 @@ import {
   ClipboardList,
   IndianRupee,
   MessagesSquare,
+  MessageCircle,
+  Bot,
+  ExternalLink,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import WidgetShell from "@/components/workspace/WidgetShell";
 import WidgetGrid from "@/components/workspace/WidgetGrid";
 import {
-  WhatsAppWidget,
   PatientSummaryWidget,
   AppointmentWidget,
   AppointmentHistoryWidget,
@@ -45,7 +48,6 @@ import type { Patient } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
 const WIDGET_ICONS: Record<WidgetId, React.ElementType> = {
-  whatsapp: MessagesSquare,
   summary: User,
   appointment: CalendarClock,
   appointmentHistory: History,
@@ -61,7 +63,6 @@ const WIDGET_ICONS: Record<WidgetId, React.ElementType> = {
 };
 
 const WIDGET_COMPONENTS: Record<WidgetId, React.ComponentType<{ patient: Patient }>> = {
-  whatsapp: WhatsAppWidget,
   summary: PatientSummaryWidget,
   appointment: AppointmentWidget,
   appointmentHistory: AppointmentHistoryWidget,
@@ -77,7 +78,6 @@ const WIDGET_COMPONENTS: Record<WidgetId, React.ComponentType<{ patient: Patient
 };
 
 const WIDGET_TITLE: Record<WidgetId, string> = {
-  whatsapp: "WhatsApp Conversation",
   summary: "Patient Summary",
   appointment: "Appointment Details",
   appointmentHistory: "Appointment History",
@@ -101,6 +101,7 @@ export default function PatientWorkspace() {
   const [editMode, setEditMode] = React.useState(false);
   const [draftLayout, setDraftLayout] = React.useState<WidgetLayoutItem[]>(widgetLayout);
   const [savedFlash, setSavedFlash] = React.useState(false);
+  const [showConversation, setShowConversation] = React.useState(false);
 
   React.useEffect(() => {
     if (!editMode) setDraftLayout(widgetLayout);
@@ -135,6 +136,11 @@ export default function PatientWorkspace() {
   const handleReset = () => {
     resetWidgetLayout();
     setDraftLayout(widgetLayout);
+  };
+
+  const openCommunicationCenter = () => {
+    setShowConversation(false);
+    navigate(`/dashboard/communication?patient=${encodeURIComponent(patient.name)}`);
   };
 
   const layoutToRender = editMode ? draftLayout : widgetLayout;
@@ -182,9 +188,14 @@ export default function PatientWorkspace() {
           </div>
           <p className="text-sm text-muted-foreground">Unified patient workspace — every module below is live and shared with the doctor dashboard.</p>
         </div>
-        <Button variant="outline" size="sm">
-          <Phone className="h-4 w-4" /> {patient.phone}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowConversation(true)}>
+            <MessageCircle className="h-4 w-4" /> View Conversation
+          </Button>
+          <Button variant="outline" size="sm">
+            <Phone className="h-4 w-4" /> {patient.phone}
+          </Button>
+        </div>
       </div>
 
       <div className={cn(editMode && "rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4")}>
@@ -198,7 +209,7 @@ export default function PatientWorkspace() {
             return (
               <WidgetShell
                 title={WIDGET_TITLE[widgetId]}
-                icon={<Icon className="h-4 w-4 text-primary" />}
+                icon={<Icon className="h-4 w-4 text-white" />}
                 span={span}
                 editMode={dragState.editMode}
                 isDragging={dragState.isDragging}
@@ -212,6 +223,47 @@ export default function PatientWorkspace() {
           }}
         />
       </div>
+
+      <Dialog open={showConversation} onOpenChange={setShowConversation}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-primary" /> WhatsApp Conversation — {patient.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[420px] space-y-3 overflow-y-auto rounded-lg bg-[#e5ded5] p-4">
+            {patient.whatsappThread.map((msg) => (
+              <div key={msg.id} className={cn("flex", msg.sender === "patient" ? "justify-start" : "justify-end")}>
+                <div
+                  className={cn(
+                    "max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm",
+                    msg.sender === "patient" ? "bg-white text-foreground" : "bg-[#d9fdd3] text-foreground"
+                  )}
+                >
+                  {msg.sender === "ai" && (
+                    <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-primary">
+                      <Bot className="h-3 w-3" /> AI Receptionist
+                    </p>
+                  )}
+                  <p>{msg.text}</p>
+                  <p className="mt-1 text-right text-[10px] text-muted-foreground">{msg.time}</p>
+                </div>
+              </div>
+            ))}
+            {patient.whatsappThread.length === 0 && (
+              <p className="py-10 text-center text-sm text-muted-foreground">No conversation history yet.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowConversation(false)}>
+              Close
+            </Button>
+            <Button onClick={openCommunicationCenter}>
+              <ExternalLink className="h-4 w-4" /> Open Communication Center
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

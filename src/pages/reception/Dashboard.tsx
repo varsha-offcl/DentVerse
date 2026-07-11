@@ -7,6 +7,7 @@ import {
   XCircle,
   Search,
   MessagesSquare,
+  Receipt,
   Bell,
   ChevronRight,
   ArrowRight,
@@ -60,6 +61,7 @@ export default function ReceptionDashboard() {
     { label: "Reschedule Requests", description: `${rescheduleCount} awaiting review`, icon: RefreshCcw, to: "/reception/reschedule" },
     { label: "Cancellation Requests", description: `${cancellationCount} awaiting review`, icon: XCircle, to: "/reception/cancellations" },
     { label: "Patient Search", description: "Look up contact & visit info", icon: Search, to: "/reception/patients" },
+    { label: "Billing & Payments", description: "Invoices, receipts & payment status", icon: Receipt, to: "/reception/billing" },
     { label: "Communication Center", description: "Monitor AI conversations", icon: MessagesSquare, to: "/reception/communication" },
     { label: "Notifications", description: `${unreadCount} unread`, icon: Bell, to: "/reception/notifications" },
   ];

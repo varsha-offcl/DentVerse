@@ -2,7 +2,6 @@
 // Order + size are global and shared across every patient — doctors customize once and it sticks everywhere.
 
 export type WidgetId =
-  | "whatsapp"
   | "summary"
   | "appointment"
   | "appointmentHistory"
@@ -30,7 +29,6 @@ export interface WidgetLayoutItem {
 }
 
 export const WIDGET_DEFS: WidgetDef[] = [
-  { id: "whatsapp", title: "WhatsApp Conversation", span: 2 },
   { id: "summary", title: "Patient Summary", span: 2 },
   { id: "appointment", title: "Appointment Details", span: 1 },
   { id: "appointmentHistory", title: "Appointment History", span: 1 },

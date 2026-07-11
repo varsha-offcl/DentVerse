@@ -111,7 +111,8 @@ export interface Invoice {
   date: string;
   description: string;
   amount: number;
-  status: "Paid" | "Pending" | "Overdue";
+  status: "Paid" | "Pending" | "Partially Paid" | "Overdue";
+  amountPaid?: number;
 }
 
 export interface Patient {
@@ -509,7 +510,7 @@ const patientExtras: Record<
     ],
     invoices: [
       { id: "inv1", date: "2026-06-20", description: "Root Canal — Sitting 2", amount: 6000, status: "Paid" },
-      { id: "inv2", date: "2026-07-10", description: "Root Canal — Sitting 3", amount: 6000, status: "Pending" },
+      { id: "inv2", date: "2026-07-10", description: "Root Canal — Sitting 3", amount: 6000, status: "Partially Paid", amountPaid: 3000 },
       { id: "inv3", date: "2026-06-05", description: "Diagnostic X-Rays", amount: 2000, status: "Overdue" },
     ],
   },

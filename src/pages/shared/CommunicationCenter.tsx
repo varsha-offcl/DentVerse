@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   MessageCircle,
   Bot,
@@ -16,6 +17,7 @@ import {
   RotateCcw,
   Check,
   Circle,
+  X,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { conversations, outgoingMessages, type ConversationStatus, type OutgoingCategory } from "@/data/communication";
@@ -75,12 +77,16 @@ const OUTGOING_ICONS: Record<OutgoingCategory, React.ElementType> = {
 
 export default function CommunicationCenter() {
   const { broadcasts } = useAppState();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const patientFilter = searchParams.get("patient");
   const [filter, setFilter] = React.useState<"All" | ConversationStatus>("All");
   const [timelineConv, setTimelineConv] = React.useState<(typeof conversations)[number] | null>(null);
   const [retryingId, setRetryingId] = React.useState<string | null>(null);
   const [retried, setRetried] = React.useState<Record<string, boolean>>({});
 
-  const filteredConversations = conversations.filter((c) => filter === "All" || c.status === filter);
+  const filteredConversations = conversations.filter(
+    (c) => (filter === "All" || c.status === filter) && (!patientFilter || c.patientName === patientFilter)
+  );
 
   const incomingCounts = {
     New: conversations.filter((c) => c.incomingCategory === "New").length,
@@ -115,6 +121,17 @@ export default function CommunicationCenter() {
           Monitor AI-handled WhatsApp conversations and message delivery — this is a monitoring view, not a manual reply inbox.
         </p>
       </div>
+
+      {patientFilter && (
+        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-secondary/40 p-3 text-sm">
+          <span>
+            Showing conversations and messages for <span className="font-semibold">{patientFilter}</span>
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => setSearchParams({})}>
+            <X className="h-3.5 w-3.5" /> Clear filter
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {analytics.map((a) => (
@@ -201,7 +218,9 @@ export default function CommunicationCenter() {
             </TabsList>
             {OUTGOING_CATEGORIES.map((cat) => {
               const Icon = OUTGOING_ICONS[cat];
-              const items = outgoingMessages.filter((m) => m.category === cat);
+              const items = outgoingMessages.filter(
+                (m) => m.category === cat && (!patientFilter || m.patientName === patientFilter)
+              );
               return (
                 <TabsContent key={cat} value={cat} className="space-y-2">
                   {items.map((m) => (

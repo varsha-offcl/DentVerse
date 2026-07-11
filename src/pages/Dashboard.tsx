@@ -165,7 +165,7 @@ export default function Dashboard() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-lg font-semibold">Practice Modules</h2>
+        <h2 className="mb-3 text-lg font-semibold">Quick Access</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {modules.map((mod) => (
             <Link key={mod.label} to={mod.to}>

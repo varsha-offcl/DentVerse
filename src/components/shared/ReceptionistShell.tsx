@@ -9,6 +9,8 @@ import {
   XCircle,
   Search,
   MessagesSquare,
+  Megaphone,
+  Receipt,
   Bell,
   Stethoscope,
 } from "lucide-react";
@@ -26,7 +28,9 @@ const navItems = [
   { to: "/reception/reschedule", label: "Reschedule Requests", icon: RefreshCcw, badgeKey: "reschedule" },
   { to: "/reception/cancellations", label: "Cancellation Requests", icon: XCircle, badgeKey: "cancellation" },
   { to: "/reception/patients", label: "Patient Search", icon: Search },
+  { to: "/reception/billing", label: "Billing & Payments", icon: Receipt },
   { to: "/reception/communication", label: "Communication Center", icon: MessagesSquare },
+  { to: "/reception/broadcast", label: "Broadcast Center", icon: Megaphone },
   { to: "/reception/notifications", label: "Notifications", icon: Bell, badgeKey: "unread" },
 ];
 

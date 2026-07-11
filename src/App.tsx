@@ -16,7 +16,6 @@ import Cancelled from "@/pages/Cancelled";
 import PatientList from "@/pages/PatientList";
 import Notifications from "@/pages/Notifications";
 import Availability from "@/pages/Availability";
-import Broadcast from "@/pages/Broadcast";
 import PatientWorkspace from "@/pages/PatientWorkspace";
 import VoiceToChart from "@/pages/VoiceToChart";
 import Prescription from "@/pages/Prescription";
@@ -30,6 +29,7 @@ import ReceptionRequests from "@/pages/reception/Requests";
 import RescheduleRequests from "@/pages/reception/RescheduleRequests";
 import CancellationRequests from "@/pages/reception/CancellationRequests";
 import PatientSearch from "@/pages/reception/PatientSearch";
+import BillingPayments from "@/pages/reception/BillingPayments";
 
 // Admin
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -40,6 +40,7 @@ import LogsPage from "@/pages/admin/LogsPage";
 
 // Shared
 import CommunicationCenter from "@/pages/shared/CommunicationCenter";
+import BroadcastCenter from "@/pages/shared/BroadcastCenter";
 import ProfilePage from "@/pages/shared/ProfilePage";
 import AccountSettingsPage from "@/pages/shared/AccountSettingsPage";
 
@@ -60,7 +61,8 @@ export default function App() {
             <Route path="/dashboard/patients" element={<PatientList />} />
             <Route path="/dashboard/notifications" element={<Notifications />} />
             <Route path="/dashboard/availability" element={<Availability />} />
-            <Route path="/dashboard/broadcast" element={<Broadcast />} />
+            <Route path="/dashboard/broadcast" element={<BroadcastCenter />} />
+            <Route path="/dashboard/communication" element={<CommunicationCenter />} />
             <Route path="/dashboard/profile" element={<ProfilePage />} />
             <Route path="/dashboard/settings" element={<AccountSettingsPage />} />
 
@@ -80,7 +82,9 @@ export default function App() {
             <Route path="/reception/reschedule" element={<RescheduleRequests />} />
             <Route path="/reception/cancellations" element={<CancellationRequests />} />
             <Route path="/reception/patients" element={<PatientSearch />} />
+            <Route path="/reception/billing" element={<BillingPayments />} />
             <Route path="/reception/communication" element={<CommunicationCenter />} />
+            <Route path="/reception/broadcast" element={<BroadcastCenter />} />
             <Route path="/reception/notifications" element={<Notifications />} />
             <Route path="/reception/profile" element={<ProfilePage />} />
             <Route path="/reception/settings" element={<AccountSettingsPage />} />
@@ -92,6 +96,7 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/staff" element={<StaffManagement />} />
             <Route path="/admin/communication" element={<CommunicationCenter />} />
+            <Route path="/admin/broadcast" element={<BroadcastCenter />} />
             <Route path="/admin/reports" element={<ReportsDashboard />} />
             <Route path="/admin/logs" element={<LogsPage />} />
             <Route path="/admin/settings" element={<ClinicSettings />} />

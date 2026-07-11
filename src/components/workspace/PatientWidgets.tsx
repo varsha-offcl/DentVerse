@@ -26,7 +26,6 @@ import {
   Clock,
   Send,
   Camera,
-  Bot,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { Button } from "@/components/ui/button";
@@ -49,36 +48,6 @@ function statusBadgeVariant(status: string) {
     default:
       return "muted" as const;
   }
-}
-
-/* ------------------------------ WhatsApp Conversation ------------------------------ */
-
-export function WhatsAppWidget({ patient }: { patient: Patient }) {
-  return (
-    <div className="max-h-[480px] space-y-3 overflow-y-auto rounded-lg bg-[#e5ded5] p-4">
-      {patient.whatsappThread.map((msg) => (
-        <div key={msg.id} className={cn("flex", msg.sender === "patient" ? "justify-start" : "justify-end")}>
-          <div
-            className={cn(
-              "max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm",
-              msg.sender === "patient" ? "bg-white text-foreground" : "bg-[#d9fdd3] text-foreground"
-            )}
-          >
-            {msg.sender === "ai" && (
-              <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold text-primary">
-                <Bot className="h-3 w-3" /> AI Receptionist
-              </p>
-            )}
-            <p>{msg.text}</p>
-            <p className="mt-1 text-right text-[10px] text-muted-foreground">{msg.time}</p>
-          </div>
-        </div>
-      ))}
-      {patient.whatsappThread.length === 0 && (
-        <p className="py-10 text-center text-sm text-muted-foreground">No conversation history yet.</p>
-      )}
-    </div>
-  );
 }
 
 /* ---------------------------- Patient Summary ---------------------------- */
@@ -569,6 +538,8 @@ function invoiceBadgeVariant(status: string) {
       return "success" as const;
     case "Pending":
       return "warning" as const;
+    case "Partially Paid":
+      return "warning" as const;
     default:
       return "destructive" as const;
   }
@@ -578,12 +549,12 @@ export function InvoiceWidget({ patient }: { patient: Patient }) {
   const [reminderSent, setReminderSent] = React.useState(false);
 
   const totalBilled = patient.invoices.reduce((sum, inv) => sum + inv.amount, 0);
-  const amountPaid = patient.invoices
-    .filter((inv) => inv.status === "Paid")
-    .reduce((sum, inv) => sum + inv.amount, 0);
-  const amountDue = patient.invoices
-    .filter((inv) => inv.status !== "Paid")
-    .reduce((sum, inv) => sum + inv.amount, 0);
+  const amountPaid = patient.invoices.reduce((sum, inv) => {
+    if (inv.status === "Paid") return sum + inv.amount;
+    if (inv.status === "Partially Paid") return sum + (inv.amountPaid ?? 0);
+    return sum;
+  }, 0);
+  const amountDue = totalBilled - amountPaid;
 
   return (
     <div className="space-y-3">
@@ -611,7 +582,12 @@ export function InvoiceWidget({ patient }: { patient: Patient }) {
             <div key={inv.id} className="flex items-center justify-between rounded-lg border border-border p-2.5">
               <div>
                 <p className="text-sm font-medium">{inv.description}</p>
-                <p className="text-xs text-muted-foreground">{inv.date} · ₹{inv.amount.toLocaleString("en-IN")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {inv.date} · ₹{inv.amount.toLocaleString("en-IN")}
+                  {inv.status === "Partially Paid" && inv.amountPaid !== undefined && (
+                    <> · ₹{inv.amountPaid.toLocaleString("en-IN")} paid</>
+                  )}
+                </p>
               </div>
               <Badge variant={invoiceBadgeVariant(inv.status)}>{inv.status}</Badge>
             </div>

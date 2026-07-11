@@ -31,6 +31,12 @@ export interface StaffDoctor {
   appointmentsThisMonth: number;
   rating: number;
   revenueThisMonth: number;
+  completionRate: number;
+  noShowRate: number;
+  followUpCompletionRate: number;
+  aiResolutionRate: number;
+  broadcastsSent: number;
+  broadcastDeliveryRate: number;
 }
 
 export interface StaffReceptionist {
@@ -73,6 +79,12 @@ export const staffDoctors: StaffDoctor[] = [
     appointmentsThisMonth: 96,
     rating: 4.9,
     revenueThisMonth: 486500,
+    completionRate: 96,
+    noShowRate: 5.1,
+    followUpCompletionRate: 91,
+    aiResolutionRate: 89,
+    broadcastsSent: 6,
+    broadcastDeliveryRate: 97,
   },
   {
     id: "doc2",
@@ -85,6 +97,12 @@ export const staffDoctors: StaffDoctor[] = [
     appointmentsThisMonth: 74,
     rating: 4.7,
     revenueThisMonth: 352000,
+    completionRate: 92,
+    noShowRate: 7.4,
+    followUpCompletionRate: 85,
+    aiResolutionRate: 84,
+    broadcastsSent: 4,
+    broadcastDeliveryRate: 95,
   },
   {
     id: "doc3",
@@ -97,6 +115,12 @@ export const staffDoctors: StaffDoctor[] = [
     appointmentsThisMonth: 12,
     rating: 4.8,
     revenueThisMonth: 84000,
+    completionRate: 98,
+    noShowRate: 3.6,
+    followUpCompletionRate: 93,
+    aiResolutionRate: 90,
+    broadcastsSent: 2,
+    broadcastDeliveryRate: 96,
   },
 ];
 
@@ -140,6 +164,7 @@ export const PERMISSIONS: Record<Role, string[]> = {
     "Appointment Management",
     "Check-in / Check-out",
     "Patient Search",
+    "Billing & Payments",
     "Notifications",
   ],
   admin: [

@@ -14,6 +14,7 @@ import {
   type TreatmentPlan,
   type PatientImage,
   type PatientReport,
+  type Invoice,
 } from "@/data/mockData";
 import {
   type WidgetId,
@@ -29,6 +30,7 @@ import {
   type RescheduleRequest,
   type CancellationRequest,
 } from "@/data/reception";
+import { type Campaign, CAMPAIGNS_STORAGE_KEY, loadStoredCampaigns } from "@/data/campaigns";
 
 export type Theme = "light" | "dark";
 
@@ -94,12 +96,17 @@ interface AppStateContextValue {
   removePatientImage: (patientId: string, imageId: string) => void;
   addPatientReport: (patientId: string, report: PatientReport) => void;
   removePatientReport: (patientId: string, reportId: string) => void;
+  addInvoice: (patientId: string, invoice: Invoice) => void;
+  markInvoicePaid: (patientId: string, invoiceId: string) => void;
 
   widgetLayout: WidgetLayoutItem[];
   setWidgetLayout: (layout: WidgetLayoutItem[]) => void;
   saveWidgetLayout: (layout: WidgetLayoutItem[]) => void;
   resetWidgetLayout: () => void;
   toggleWidgetSpan: (layout: WidgetLayoutItem[], id: WidgetId) => WidgetLayoutItem[];
+
+  campaigns: Campaign[];
+  toggleCampaign: (id: string) => void;
 
   selectedPatientId: string | null;
   setSelectedPatientId: (id: string | null) => void;
@@ -118,6 +125,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<Theme>(() => loadStoredTheme());
   const [rescheduleRequests, setRescheduleRequests] = React.useState<RescheduleRequest[]>(seedRescheduleRequests);
   const [cancellationRequests, setCancellationRequests] = React.useState<CancellationRequest[]>(seedCancellationRequests);
+  const [campaigns, setCampaigns] = React.useState<Campaign[]>(() => loadStoredCampaigns());
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -278,6 +286,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const addInvoice = (patientId: string, invoice: Invoice) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId
+          ? { ...p, invoices: [invoice, ...p.invoices], balanceDue: p.balanceDue + invoice.amount }
+          : p
+      )
+    );
+  };
+
+  const markInvoicePaid = (patientId: string, invoiceId: string) => {
+    setPatients((prev) =>
+      prev.map((p) => {
+        if (p.id !== patientId) return p;
+        let due = 0;
+        const invoices = p.invoices.map((inv) => {
+          if (inv.id !== invoiceId) return inv;
+          const remaining = inv.amount - (inv.status === "Partially Paid" ? inv.amountPaid ?? 0 : 0);
+          due = remaining;
+          return { ...inv, status: "Paid" as const, amountPaid: undefined };
+        });
+        return { ...p, invoices, balanceDue: Math.max(0, p.balanceDue - due) };
+      })
+    );
+  };
+
   const saveWidgetLayout = (layout: WidgetLayoutItem[]) => {
     setWidgetLayout(layout);
     try {
@@ -293,6 +327,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const toggleWidgetSpan = (layout: WidgetLayoutItem[], id: WidgetId) =>
     layout.map((item) => (item.id === id ? { ...item, span: item.span === 1 ? 2 : 1 } as WidgetLayoutItem : item));
+
+  const toggleCampaign = (id: string) => {
+    setCampaigns((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, enabled: !c.enabled } : c));
+      try {
+        const flags = Object.fromEntries(next.map((c) => [c.id, c.enabled]));
+        window.localStorage.setItem(CAMPAIGNS_STORAGE_KEY, JSON.stringify(flags));
+      } catch {
+        // ignore persistence errors in demo environment
+      }
+      return next;
+    });
+  };
 
   const value: AppStateContextValue = {
     loggedIn: role !== null,
@@ -327,11 +374,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     removePatientImage,
     addPatientReport,
     removePatientReport,
+    addInvoice,
+    markInvoicePaid,
     widgetLayout,
     setWidgetLayout,
     saveWidgetLayout,
     resetWidgetLayout,
     toggleWidgetSpan,
+    campaigns,
+    toggleCampaign,
     selectedPatientId,
     setSelectedPatientId,
   };

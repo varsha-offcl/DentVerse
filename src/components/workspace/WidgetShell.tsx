@@ -34,24 +34,24 @@ export default function WidgetShell({
       {...cardDragProps}
       style={{ columnSpan: span === 2 ? ("all" as const) : undefined }}
       className={cn(
-        "mb-4 flex flex-col break-inside-avoid transition-all",
+        "mb-4 flex flex-col overflow-hidden break-inside-avoid transition-all",
         editMode && "cursor-grab border-dashed border-primary/40 active:cursor-grabbing",
         isDragging && "opacity-40",
         isDropTarget && "ring-2 ring-primary"
       )}
     >
-      <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-border/60 pb-3">
+      <CardHeader className="flex-row h-12 items-center justify-between space-y-0 bg-primary py-0 text-white">
         <div className="flex items-center gap-2">
-          {editMode && <GripVertical className="h-4 w-4 text-muted-foreground" />}
+          {editMode && <GripVertical className="h-4 w-4 text-white/80" />}
           {icon}
-          <CardTitle className="text-sm">{title}</CardTitle>
+          <CardTitle className="text-sm text-white">{title}</CardTitle>
         </div>
         {editMode ? (
           onToggleSpan && (
             <button
               type="button"
               onClick={onToggleSpan}
-              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="flex items-center gap-1 rounded-md border border-white/40 px-2 py-1 text-[11px] font-medium text-white hover:bg-white/10"
               title={span === 2 ? "Shrink to half width" : "Expand to full width"}
             >
               {span === 2 ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
