@@ -26,12 +26,21 @@ import {
   Clock,
   Send,
   Camera,
+  Pencil,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Patient, ImageCategory, TreatmentPhase } from "@/data/mockData";
@@ -53,6 +62,28 @@ function statusBadgeVariant(status: string) {
 /* ---------------------------- Patient Summary ---------------------------- */
 
 export function PatientSummaryWidget({ patient }: { patient: Patient }) {
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [form, setForm] = React.useState({
+    phone: patient.phone,
+    age: String(patient.age),
+    gender: patient.gender,
+    email: patient.email,
+  });
+  const [showToast, setShowToast] = React.useState(false);
+
+  const startEdit = () => {
+    setForm({ phone: patient.phone, age: String(patient.age), gender: patient.gender, email: patient.email });
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => setIsEditing(false);
+
+  const saveEdit = () => {
+    setIsEditing(false);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-[auto,1fr]">
       <div className="flex items-center gap-4 sm:flex-col sm:items-start">
@@ -65,41 +96,103 @@ export function PatientSummaryWidget({ patient }: { patient: Patient }) {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground"><Hash className="h-3 w-3" /> Patient ID</p>
-          <p className="mt-0.5 font-mono text-sm font-medium">{patient.id.toUpperCase()}</p>
-        </div>
-        <div>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> Phone</p>
-          <p className="mt-0.5 text-sm font-medium">{patient.phone}</p>
-        </div>
-        <div>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground"><Cake className="h-3 w-3" /> Age / Gender</p>
-          <p className="mt-0.5 text-sm font-medium">{patient.age} yrs · {patient.gender}</p>
-        </div>
-        <div>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="h-3 w-3" /> Email</p>
-          <p className="mt-0.5 truncate text-sm font-medium">{patient.email}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Member Since</p>
-          <p className="mt-0.5 text-sm font-medium">{patient.memberSince}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">Last Visit</p>
-          <p className="mt-0.5 text-sm font-medium">{patient.lastVisit}</p>
-        </div>
-        <div className="col-span-2">
-          {patient.allergies.length > 0 ? (
-            <p className="flex items-center gap-1 text-sm font-medium text-destructive">
-              <AlertTriangle className="h-3.5 w-3.5" /> Allergic to {patient.allergies.join(", ")}
-            </p>
+      <div>
+        <div className="mb-3 flex justify-end">
+          {!isEditing ? (
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              <Pencil className="h-3.5 w-3.5" /> Update
+            </Button>
           ) : (
-            <p className="text-sm text-success">No known allergies</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={cancelEdit}>
+                <X className="h-3.5 w-3.5" /> Cancel
+              </Button>
+              <Button size="sm" onClick={saveEdit}>
+                <Check className="h-3.5 w-3.5" /> Save Changes
+              </Button>
+            </div>
           )}
         </div>
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Hash className="h-3 w-3" /> Patient ID</p>
+            <p className="mt-0.5 font-mono text-sm font-medium">{patient.id.toUpperCase()}</p>
+          </div>
+          <div>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> Phone</p>
+            {isEditing ? (
+              <Input
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                className="mt-0.5 h-8 text-sm"
+              />
+            ) : (
+              <p className="mt-0.5 text-sm font-medium">{patient.phone}</p>
+            )}
+          </div>
+          <div>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Cake className="h-3 w-3" /> Age / Gender</p>
+            {isEditing ? (
+              <div className="mt-0.5 flex gap-1.5">
+                <Input
+                  type="number"
+                  value={form.age}
+                  onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))}
+                  className="h-8 w-16 text-sm"
+                />
+                <Select value={form.gender} onValueChange={(v) => setForm((f) => ({ ...f, gender: v as "Male" | "Female" }))}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Male">Male</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <p className="mt-0.5 text-sm font-medium">{patient.age} yrs · {patient.gender}</p>
+            )}
+          </div>
+          <div>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Mail className="h-3 w-3" /> Email</p>
+            {isEditing ? (
+              <Input
+                value={form.email}
+                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                className="mt-0.5 h-8 text-sm"
+              />
+            ) : (
+              <p className="mt-0.5 truncate text-sm font-medium">{patient.email}</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Member Since</p>
+            <p className="mt-0.5 text-sm font-medium">{patient.memberSince}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Last Visit</p>
+            <p className="mt-0.5 text-sm font-medium">{patient.lastVisit}</p>
+          </div>
+          <div className="col-span-2">
+            {patient.allergies.length > 0 ? (
+              <p className="flex items-center gap-1 text-sm font-medium text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5" /> Allergic to {patient.allergies.join(", ")}
+              </p>
+            ) : (
+              <p className="text-sm text-success">No known allergies</p>
+            )}
+          </div>
+        </div>
       </div>
+
+      {showToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-success px-4 py-3 text-sm font-medium text-success-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2">
+          <CheckCircle2 className="h-4 w-4" />
+          Patient details updated successfully.
+        </div>
+      )}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   MessageCircle,
   Bot,
   ExternalLink,
+  CheckCircle2,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { Button } from "@/components/ui/button";
@@ -102,6 +103,7 @@ export default function PatientWorkspace() {
   const [draftLayout, setDraftLayout] = React.useState<WidgetLayoutItem[]>(widgetLayout);
   const [savedFlash, setSavedFlash] = React.useState(false);
   const [showConversation, setShowConversation] = React.useState(false);
+  const [showRecordToast, setShowRecordToast] = React.useState(false);
 
   React.useEffect(() => {
     if (!editMode) setDraftLayout(widgetLayout);
@@ -141,6 +143,11 @@ export default function PatientWorkspace() {
   const openCommunicationCenter = () => {
     setShowConversation(false);
     navigate(`/dashboard/communication?patient=${encodeURIComponent(patient.name)}`);
+  };
+
+  const handleSaveDetails = () => {
+    setShowRecordToast(true);
+    setTimeout(() => setShowRecordToast(false), 3000);
   };
 
   const layoutToRender = editMode ? draftLayout : widgetLayout;
@@ -223,6 +230,19 @@ export default function PatientWorkspace() {
           }}
         />
       </div>
+
+      <div className="flex justify-center border-t border-border pt-6">
+        <Button size="lg" onClick={handleSaveDetails}>
+          <Save className="h-4 w-4" /> Save Details
+        </Button>
+      </div>
+
+      {showRecordToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-success px-4 py-3 text-sm font-medium text-success-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2">
+          <CheckCircle2 className="h-4 w-4" />
+          Patient record updated successfully.
+        </div>
+      )}
 
       <Dialog open={showConversation} onOpenChange={setShowConversation}>
         <DialogContent className="max-w-lg">

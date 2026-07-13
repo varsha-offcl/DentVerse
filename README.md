@@ -1,32 +1,20 @@
-# React + TypeScript + Vite
+# DentVerse
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+AI-first dental practice management platform — staff dashboards (Doctor, Receptionist, Admin) plus an AI receptionist backend for patient onboarding over WhatsApp, Instagram, and Facebook.
 
-Currently, two official plugins are available:
+This repository contains **application source code only**. All project documentation — architecture, database schema, API docs, SOPs, tech stack, ADRs, milestones, and setup guides — lives in a separate repository:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**→ [`C:\work\DentVerseDocs`](../DentVerseDocs/README.md)**
 
-## React Compiler
+## Quick start
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+See [`DentVerseDocs/13-setup-guides/frontend-setup.md`](../DentVerseDocs/13-setup-guides/frontend-setup.md) for full setup details, stack notes, and what's mock vs. real at the current stage.
+
+## Stack
+
+React 19 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui. Backend (Supabase + a NestJS AI orchestrator) is planned but not yet built — see [`DentVerseDocs/12-milestones/development-milestones.md`](../DentVerseDocs/12-milestones/development-milestones.md).
