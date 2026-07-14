@@ -8,9 +8,9 @@ import {
   CheckCircle2,
   MessageCircle,
   Stethoscope,
+  AlertTriangle,
 } from "lucide-react";
-import { useAppState } from "@/context/AppStateContext";
-import { currentDoctor } from "@/data/mockData";
+import { useAppState, type InvoiceWithPatient } from "@/context/AppStateContext";
 import type { Invoice } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-type BillingRow = Invoice & { patientId: string; patientName: string; avatarInitials: string };
+type BillingRow = InvoiceWithPatient;
 
 const STATUS_FILTERS = ["All", "Paid", "Pending", "Partially Paid", "Overdue"] as const;
 
@@ -52,11 +52,9 @@ function statusBadgeVariant(status: Invoice["status"]) {
 }
 
 export default function BillingPayments() {
-  const { patients, addInvoice, markInvoicePaid } = useAppState();
+  const { patients, invoices, addInvoice, markInvoicePaid, profile } = useAppState();
 
-  const rows: BillingRow[] = patients.flatMap((p) =>
-    p.invoices.map((inv) => ({ ...inv, patientId: p.id, patientName: p.name, avatarInitials: p.avatarInitials }))
-  );
+  const rows: BillingRow[] = invoices;
 
   const [filter, setFilter] = React.useState<(typeof STATUS_FILTERS)[number]>("All");
   const [receiptRow, setReceiptRow] = React.useState<BillingRow | null>(null);
@@ -65,6 +63,10 @@ export default function BillingPayments() {
   const [newPatientId, setNewPatientId] = React.useState(patients[0]?.id ?? "");
   const [newDescription, setNewDescription] = React.useState("");
   const [newAmount, setNewAmount] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const [payingId, setPayingId] = React.useState<string | null>(null);
+  const [payError, setPayError] = React.useState<string | null>(null);
 
   const filtered = rows
     .filter((r) => filter === "All" || r.status === filter)
@@ -84,18 +86,35 @@ export default function BillingPayments() {
     setReceiptRow(row);
   };
 
-  const handleCreateInvoice = () => {
+  const handleCreateInvoice = async () => {
     if (!newPatientId || !newDescription.trim() || !newAmount) return;
-    addInvoice(newPatientId, {
-      id: `inv${Date.now()}`,
-      date: "2026-07-12",
-      description: newDescription.trim(),
-      amount: parseFloat(newAmount) || 0,
-      status: "Pending",
-    });
-    setCreateOpen(false);
-    setNewDescription("");
-    setNewAmount("");
+    setSaving(true);
+    setFormError(null);
+    try {
+      await addInvoice(newPatientId, {
+        description: newDescription.trim(),
+        amount: parseFloat(newAmount) || 0,
+      });
+      setCreateOpen(false);
+      setNewDescription("");
+      setNewAmount("");
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not create this invoice.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMarkPaid = async (row: BillingRow) => {
+    setPayingId(row.id);
+    setPayError(null);
+    try {
+      await markInvoicePaid(row.patientId, row.id);
+    } catch (err) {
+      setPayError(err instanceof Error ? err.message : "Could not mark this invoice as paid.");
+    } finally {
+      setPayingId(null);
+    }
   };
 
   return (
@@ -154,6 +173,12 @@ export default function BillingPayments() {
         ))}
       </div>
 
+      {payError && (
+        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {payError}
+        </p>
+      )}
+
       <div className="space-y-2">
         {filtered.map((row) => (
           <Card key={`${row.patientId}-${row.id}`}>
@@ -176,8 +201,8 @@ export default function BillingPayments() {
               </div>
               <div className="flex shrink-0 gap-2">
                 {row.status !== "Paid" && (
-                  <Button size="sm" variant="success" onClick={() => markInvoicePaid(row.patientId, row.id)}>
-                    <Check className="h-3.5 w-3.5" /> Mark as Paid
+                  <Button size="sm" variant="success" disabled={payingId === row.id} onClick={() => handleMarkPaid(row)}>
+                    <Check className="h-3.5 w-3.5" /> {payingId === row.id ? "Updating..." : "Mark as Paid"}
                   </Button>
                 )}
                 <Button size="sm" variant="outline" onClick={() => openReceipt(row)}>
@@ -221,11 +246,12 @@ export default function BillingPayments() {
               <Label>Amount (₹)</Label>
               <Input type="number" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} placeholder="1500" />
             </div>
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateInvoice} disabled={!newPatientId || !newDescription.trim() || !newAmount}>
-              <Plus className="h-4 w-4" /> Create Invoice
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleCreateInvoice} disabled={!newPatientId || !newDescription.trim() || !newAmount || saving}>
+              <Plus className="h-4 w-4" /> {saving ? "Creating..." : "Create Invoice"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -246,7 +272,7 @@ export default function BillingPayments() {
                       <Stethoscope className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="font-bold">{currentDoctor.clinic}</p>
+                      <p className="font-bold">{profile?.clinicName}</p>
                       <p className="text-xs text-muted-foreground">Payment Receipt</p>
                     </div>
                   </div>

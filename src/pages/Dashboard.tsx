@@ -17,7 +17,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
-import { currentDoctor, quickStats } from "@/data/mockData";
+import { quickStats } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,20 +38,47 @@ function statusBadgeVariant(status: string) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { appointments, notifications, patients } = useAppState();
+  const { appointments, notifications, patients, invoices, profile } = useAppState();
 
-  const today = "2026-07-10";
+  const today = new Date().toISOString().slice(0, 10);
+  const todayLabel = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
   const todaysAppointments = appointments
     .filter((a) => a.date === today && a.status !== "cancelled")
     .sort((a, b) => a.time.localeCompare(b.time));
   const pending = appointments.filter((a) => a.status === "pending");
   const unreadNotifications = notifications.filter((n) => !n.read).slice(0, 4);
 
+  // Computable from real M1/M2 data — not from quickStats.
+  const currentMonthPrefix = today.slice(0, 7);
+  const newPatientsThisMonth = patients.filter((p) => p.memberSince.startsWith(currentMonthPrefix)).length;
+  const nonCancelledAppointments = appointments.filter((a) => a.status !== "cancelled");
+  const completionRate =
+    nonCancelledAppointments.length > 0
+      ? Math.round(
+          (appointments.filter((a) => a.status === "completed").length / nonCancelledAppointments.length) * 100
+        )
+      : 0;
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  const weeklyRevenue = invoices
+    .filter((inv) => inv.date >= sevenDaysAgoStr && inv.date <= today)
+    .reduce((sum, inv) => {
+      if (inv.status === "Paid") return sum + inv.amount;
+      if (inv.status === "Partially Paid") return sum + (inv.amountPaid ?? 0);
+      return sum;
+    }, 0);
+
   const statCards = [
     { label: "Today's Appointments", value: todaysAppointments.length, icon: CalendarDays, to: "/dashboard/calendar", tint: "text-primary bg-secondary" },
     { label: "Pending Requests", value: pending.length, icon: Inbox, to: "/dashboard/requests", tint: "text-warning-foreground bg-warning/15" },
-    { label: "Weekly Revenue", value: `₹${quickStats.weeklyRevenue.toLocaleString("en-IN")}`, icon: IndianRupee, to: "/dashboard/confirmed", tint: "text-success bg-success/10" },
-    { label: "New Patients (Month)", value: quickStats.newPatientsThisMonth, icon: UserPlus, to: "/dashboard/patients", tint: "text-primary bg-secondary" },
+    { label: "Weekly Revenue", value: `₹${weeklyRevenue.toLocaleString("en-IN")}`, icon: IndianRupee, to: "/dashboard/confirmed", tint: "text-success bg-success/10" },
+    { label: "New Patients (Month)", value: newPatientsThisMonth, icon: UserPlus, to: "/dashboard/patients", tint: "text-primary bg-secondary" },
   ];
 
   const modules = [
@@ -69,8 +96,8 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Good morning, {currentDoctor.name.split(" ")[1]} 👋</h1>
-          <p className="text-sm text-muted-foreground">Friday, 10 July 2026 · Here's what's happening at {currentDoctor.clinic} today.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Good morning, {profile?.firstName} 👋</h1>
+          <p className="text-sm text-muted-foreground">{todayLabel} · Here's what's happening at {profile?.clinicName} today.</p>
         </div>
         <Button size="lg" onClick={() => navigate("/dashboard/patients")}>
           <Mic className="h-4 w-4" />
@@ -197,7 +224,7 @@ export default function Dashboard() {
               <TrendingUp className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xl font-bold">{quickStats.completionRate}%</p>
+              <p className="text-xl font-bold">{completionRate}%</p>
               <p className="text-xs text-muted-foreground">Completion Rate</p>
             </div>
           </div>
@@ -224,7 +251,7 @@ export default function Dashboard() {
               <UserPlus className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xl font-bold">{quickStats.newPatientsThisMonth}</p>
+              <p className="text-xl font-bold">{newPatientsThisMonth}</p>
               <p className="text-xs text-muted-foreground">New This Month</p>
             </div>
           </div>

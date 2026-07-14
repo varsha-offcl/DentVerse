@@ -24,14 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-function initialsFromName(name: string) {
-  const parts = name.trim().split(/\s+/);
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("") || "?";
-}
-
 export default function PatientList() {
   const navigate = useNavigate();
   const { patients, addPatient } = useAppState();
@@ -44,6 +36,8 @@ export default function PatientList() {
   const [gender, setGender] = React.useState<"Male" | "Female">("Female");
   const [email, setEmail] = React.useState("");
   const [tags, setTags] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
 
   const filtered = patients.filter(
     (p) =>
@@ -61,38 +55,30 @@ export default function PatientList() {
     setTags("");
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!name.trim() || !phone.trim()) return;
-    const id = `p${Date.now()}`;
-    addPatient({
-      id,
-      name: name.trim(),
-      avatarInitials: initialsFromName(name),
-      phone: phone.trim(),
-      age: parseInt(age, 10) || 0,
-      gender,
-      email: email.trim() || "—",
-      tags: tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-      allergies: [],
-      lastVisit: "—",
-      balanceDue: 0,
-      memberSince: "2026-07-10",
-      whatsappThread: [],
-      chartNotes: [],
-      prescriptions: [],
-      treatmentPlans: [],
-      medicalHistory: { conditions: [], medications: [], notes: "No significant medical history on file." },
-      followUps: [],
-      images: [],
-      reports: [],
-      invoices: [],
-    });
-    setDialogOpen(false);
-    resetForm();
-    navigate(`/patient/${id}`);
+    setSaving(true);
+    setFormError(null);
+    try {
+      const patient = await addPatient({
+        name: name.trim(),
+        phone: phone.trim(),
+        age: parseInt(age, 10) || 0,
+        gender,
+        email: email.trim() || "—",
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+      });
+      setDialogOpen(false);
+      resetForm();
+      navigate(`/patient/${patient.id}`);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not create patient.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -132,7 +118,12 @@ export default function PatientList() {
                     <AvatarFallback className="bg-secondary text-primary">{p.avatarInitials}</AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-semibold">{p.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-semibold">{p.name}</p>
+                      {p.patientNumber && (
+                        <span className="text-[11px] font-medium text-muted-foreground">#{p.patientNumber}</span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">{p.age} yrs · {p.gender}</p>
                   </div>
                 </div>
@@ -209,11 +200,12 @@ export default function PatientList() {
               <Label htmlFor="np-tags">Tags (comma separated)</Label>
               <Input id="np-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="New Patient, Ortho" />
             </div>
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!name.trim() || !phone.trim()}>
-              <UserPlus className="h-4 w-4" /> Create Patient
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={!name.trim() || !phone.trim() || saving}>
+              <UserPlus className="h-4 w-4" /> {saving ? "Creating..." : "Create Patient"}
             </Button>
           </DialogFooter>
         </DialogContent>

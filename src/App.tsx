@@ -6,6 +6,7 @@ import ReceptionistShell from "@/components/shared/ReceptionistShell";
 import AdminShell from "@/components/shared/AdminShell";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
+import JoinStaff from "@/pages/JoinStaff";
 
 // Doctor
 import Dashboard from "@/pages/Dashboard";
@@ -50,6 +51,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/join" element={<JoinStaff />} />
 
         <Route element={<RequireRole allow={["doctor"]} />}>
           <Route element={<DoctorShell />}>

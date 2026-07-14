@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Bot, CalendarClock, IndianRupee, XCircle, Info, CheckCheck } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +16,29 @@ const iconMap = {
 
 export default function Notifications() {
   const { notifications, markNotificationRead, markAllNotificationsRead } = useAppState();
+  const [error, setError] = React.useState<string | null>(null);
+  const [markingAll, setMarkingAll] = React.useState(false);
+
+  const handleMarkRead = async (id: string) => {
+    setError(null);
+    try {
+      await markNotificationRead(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this notification.");
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    setMarkingAll(true);
+    setError(null);
+    try {
+      await markAllNotificationsRead();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not mark all notifications as read.");
+    } finally {
+      setMarkingAll(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -23,11 +47,13 @@ export default function Notifications() {
           <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
           <p className="text-sm text-muted-foreground">Updates from your AI receptionist and practice activity.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={markAllNotificationsRead}>
+        <Button variant="outline" size="sm" onClick={handleMarkAllRead} disabled={markingAll}>
           <CheckCheck className="h-4 w-4" />
-          Mark all as read
+          {markingAll ? "Marking..." : "Mark all as read"}
         </Button>
       </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="space-y-3">
         {notifications.map((n) => {
@@ -36,7 +62,7 @@ export default function Notifications() {
             <Card
               key={n.id}
               className={cn("cursor-pointer transition-colors", !n.read && "border-primary/30 bg-secondary/40")}
-              onClick={() => markNotificationRead(n.id)}
+              onClick={() => void handleMarkRead(n.id)}
             >
               <CardContent className="flex items-start gap-4 p-5">
                 <div

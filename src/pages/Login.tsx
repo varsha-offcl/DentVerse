@@ -1,73 +1,123 @@
 import * as React from "react";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  Stethoscope,
-  Mail,
-  Lock,
-  User,
-  ArrowRight,
-  ShieldCheck,
-  Building2,
-  Headphones,
-  Settings2,
-} from "lucide-react";
+import { Link, Navigate } from "react-router-dom";
+import { Stethoscope, Mail, Lock, User, ArrowRight, ShieldCheck, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppState } from "@/context/AppStateContext";
-import { currentDoctor } from "@/data/mockData";
-import { currentReceptionist, currentAdmin, ROLE_HOME, ROLE_LABELS, ROLE_DESCRIPTIONS, type Role } from "@/data/roles";
-import { cn } from "@/lib/utils";
-
-const ROLE_OPTIONS: { role: Role; icon: React.ElementType }[] = [
-  { role: "doctor", icon: Stethoscope },
-  { role: "receptionist", icon: Headphones },
-  { role: "admin", icon: Settings2 },
-];
-
-const ROLE_DEFAULT_EMAIL: Record<Role, string> = {
-  doctor: currentDoctor.email,
-  receptionist: currentReceptionist.email,
-  admin: currentAdmin.email,
-};
+import { ROLE_HOME } from "@/data/roles";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { stashPendingClinicSetup, clearPendingClinicSetup } from "@/lib/pendingClinicSetup";
 
 export default function Login() {
-  const navigate = useNavigate();
-  const { login } = useAppState();
+  const { loggedIn, role, authLoading, logout } = useAppState();
 
-  const [role, setRole] = React.useState<Role>("doctor");
   const [mode, setMode] = React.useState<"signin" | "signup">("signin");
-  const [email, setEmail] = React.useState(ROLE_DEFAULT_EMAIL.doctor);
+  const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [name, setName] = React.useState("");
   const [clinic, setClinic] = React.useState("");
   const [signupEmail, setSignupEmail] = React.useState("");
   const [signupPassword, setSignupPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [info, setInfo] = React.useState<string | null>(null);
+  const [resending, setResending] = React.useState(false);
 
-  const handleRoleChange = (nextRole: Role) => {
-    setRole(nextRole);
-    setEmail(ROLE_DEFAULT_EMAIL[nextRole]);
+  // Auth state is still resolving (session restore + profile fetch) — render
+  // nothing rather than the form, so an already-authenticated visitor never
+  // sees a flash of the login page before being redirected below.
+  if (authLoading) {
+    return null;
+  }
+
+  // Already signed in — redirect declaratively (no extra effect/render tick,
+  // so this never paints the form first).
+  if (loggedIn && role) {
+    return <Navigate to={ROLE_HOME[role]} replace />;
+  }
+
+  // Signed in, but no profile could be resolved — happens if the
+  // deferred clinic-setup or staff-invite-acceptance step (run right
+  // after email confirmation) failed, e.g. an expired invite. Surface
+  // it instead of silently showing the sign-in form again.
+  if (loggedIn && !role) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
+        <Card className="w-full max-w-md border-border shadow-lg">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-xl">We couldn't finish setting up your account</CardTitle>
+            <CardDescription>
+              Your sign-in worked, but the clinic/staff setup step that runs right after didn't complete — possibly an
+              expired invite link. Try again, or contact your clinic admin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <Button onClick={() => window.location.reload()}>Try Again</Button>
+            <Button variant="outline" onClick={logout}>
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (signInError) setError(signInError.message);
+    // On success, AppStateContext's auth listener resolves the role and
+    // this component re-renders into the redirect branch above.
   };
 
-  const handleSignIn = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      login(role);
-      navigate(ROLE_HOME[role]);
-    }, 500);
+  const handleResendConfirmation = async () => {
+    if (!email) return;
+    setResending(true);
+    setError(null);
+    setInfo(null);
+    const { error: resendError } = await supabase.auth.resend({ type: "signup", email });
+    setResending(false);
+    if (resendError) {
+      setError(resendError.message);
+    } else {
+      setInfo("Confirmation email resent — check your inbox (and spam folder) for a new link.");
+    }
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setInfo(null);
     setLoading(true);
-    setTimeout(() => {
-      login(role);
-      navigate(ROLE_HOME[role]);
-    }, 500);
+
+    stashPendingClinicSetup({ clinicName: clinic, adminName: name });
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: signupEmail,
+      password: signupPassword,
+    });
+    setLoading(false);
+
+    if (signUpError) {
+      clearPendingClinicSetup();
+      setError(signUpError.message);
+      return;
+    }
+
+    if (!data.session) {
+      setInfo("Account created — check your email to confirm it, then sign in to finish setting up your clinic.");
+      return;
+    }
+    // A session exists immediately (email confirmation disabled on this
+    // project) — AppStateContext will pick up the pending clinic setup,
+    // create the clinic + admin profile, and this component re-renders
+    // into the redirect branch above.
   };
 
   return (
@@ -91,7 +141,7 @@ export default function Login() {
 
         <div className="relative z-10 flex items-center gap-2 text-sm text-primary-foreground/70">
           <ShieldCheck className="h-4 w-4" />
-          Secure staff access · Demo environment
+          Secure staff access · Supabase Auth
         </div>
       </div>
 
@@ -101,33 +151,32 @@ export default function Login() {
             <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground lg:hidden">
               <Stethoscope className="h-5 w-5" />
             </div>
-            <CardTitle className="text-2xl">{mode === "signin" ? "Staff Login" : "Create Your Account"}</CardTitle>
+            <CardTitle className="text-2xl">{mode === "signin" ? "Staff Login" : "Create Your Clinic"}</CardTitle>
             <CardDescription>
-              {mode === "signin" ? "Sign in to access your clinic dashboard" : "Set up your clinic on DentVerse in under a minute"}
+              {mode === "signin"
+                ? "Sign in to access your clinic dashboard"
+                : "You'll be set up as the clinic admin — invite your team from Staff Management once you're in"}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-5 grid grid-cols-3 gap-2">
-              {ROLE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.role}
-                  type="button"
-                  onClick={() => handleRoleChange(opt.role)}
-                  className={cn(
-                    "flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-center transition-colors",
-                    role === opt.role
-                      ? "border-primary bg-secondary text-primary"
-                      : "border-border text-muted-foreground hover:bg-accent"
-                  )}
-                >
-                  <opt.icon className="h-5 w-5" />
-                  <span className="text-xs font-medium">{ROLE_LABELS[opt.role]}</span>
-                </button>
-              ))}
-            </div>
-            <p className="mb-5 text-center text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</p>
+            {!isSupabaseConfigured && (
+              <div className="mb-5 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Supabase isn't configured yet — sign-in/sign-up will fail until <code>.env</code> is set up. See{" "}
+                  <code>DentVerseDocs/13-setup-guides/backend-setup.md</code>.
+                </span>
+              </div>
+            )}
 
-            <Tabs value={mode} onValueChange={(v) => setMode(v as "signin" | "signup")}>
+            <Tabs
+              value={mode}
+              onValueChange={(v) => {
+                setMode(v as "signin" | "signup");
+                setError(null);
+                setInfo(null);
+              }}
+            >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="signin">Sign In</TabsTrigger>
                 <TabsTrigger value="signup">Create Account</TabsTrigger>
@@ -170,8 +219,24 @@ export default function Login() {
                       />
                     </div>
                   </div>
+                  {mode === "signin" && error && (
+                    <div className="space-y-1.5">
+                      <p className="text-sm text-destructive">{error}</p>
+                      {error.toLowerCase().includes("confirm") && (
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                          onClick={handleResendConfirmation}
+                          disabled={resending || !email}
+                        >
+                          {resending ? "Resending..." : "Resend confirmation email"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {mode === "signin" && info && <p className="text-sm text-success">{info}</p>}
                   <Button type="submit" className="w-full" size="lg" disabled={loading}>
-                    {loading ? "Signing in..." : `Sign In as ${ROLE_LABELS[role]}`}
+                    {loading ? "Signing in..." : "Sign In"}
                     {!loading && <ArrowRight className="h-4 w-4" />}
                   </Button>
                 </form>
@@ -237,14 +302,17 @@ export default function Login() {
                         type="password"
                         value={signupPassword}
                         onChange={(e) => setSignupPassword(e.target.value)}
-                        placeholder="Create a password"
+                        placeholder="At least 6 characters"
                         className="pl-9"
                         required
+                        minLength={6}
                       />
                     </div>
                   </div>
+                  {mode === "signup" && error && <p className="text-sm text-destructive">{error}</p>}
+                  {mode === "signup" && info && <p className="text-sm text-success">{info}</p>}
                   <Button type="submit" className="w-full" size="lg" disabled={loading}>
-                    {loading ? "Creating account..." : `Create ${ROLE_LABELS[role]} Account`}
+                    {loading ? "Creating account..." : "Create Clinic Account"}
                     {!loading && <ArrowRight className="h-4 w-4" />}
                   </Button>
                 </form>
@@ -258,7 +326,7 @@ export default function Login() {
             </Tabs>
 
             <p className="mt-6 text-center text-xs text-muted-foreground">
-              This is a prototype — any details will work, no data is stored.
+              Staff accounts are real (Supabase Auth) — clinic data is being connected milestone by milestone.
             </p>
           </CardContent>
         </Card>

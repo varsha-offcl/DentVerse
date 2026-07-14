@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/context/AppStateContext";
-import { currentReceptionist } from "@/data/roles";
 import { Badge } from "@/components/ui/badge";
 import ProfileMenu from "@/components/shared/ProfileMenu";
 
@@ -36,7 +35,7 @@ const navItems = [
 
 export default function ReceptionistShell() {
   const navigate = useNavigate();
-  const { appointments, notifications, rescheduleRequests, cancellationRequests } = useAppState();
+  const { appointments, notifications, rescheduleRequests, cancellationRequests, profile } = useAppState();
 
   const pendingCount = appointments.filter((a) => a.status === "pending").length;
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -127,9 +126,9 @@ export default function ReceptionistShell() {
           </button>
 
           <ProfileMenu
-            name={currentReceptionist.name}
-            email={currentReceptionist.email}
-            avatarInitials={currentReceptionist.avatarInitials}
+            name={profile?.name ?? ""}
+            email={profile?.email ?? ""}
+            avatarInitials={profile?.avatarInitials ?? ""}
             basePath="/reception"
           />
         </header>

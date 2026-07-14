@@ -15,7 +15,7 @@ import {
   Eye,
   BadgeCheck,
 } from "lucide-react";
-import { useAppState } from "@/context/AppStateContext";
+import { useAppState, type NewTreatmentPlanInput } from "@/context/AppStateContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,15 +88,24 @@ function PlanPhaseTimeline({ phases }: { phases: TreatmentPhase[] }) {
 export default function TreatmentPlanPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { patients, addTreatmentPlan, updateTreatmentPlan } = useAppState();
+  const { patients, addTreatmentPlan, updateTreatmentPlan, updateTreatmentPlanStatus } = useAppState();
   const patient = patients.find((p) => p.id === id);
 
+  const [activeTab, setActiveTab] = React.useState("active");
   const [mode, setMode] = React.useState<"edit" | "preview">("edit");
   const [title, setTitle] = React.useState("");
   const [phases, setPhases] = React.useState<PhaseRow[]>([{ ...emptyPhase }]);
   const [approved, setApproved] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
+  const [sendError, setSendError] = React.useState<string | null>(null);
+  const [approvingId, setApprovingId] = React.useState<string | null>(null);
+  const [approveError, setApproveError] = React.useState<string | null>(null);
   const [sent, setSent] = React.useState(false);
   const [resentPlanId, setResentPlanId] = React.useState<string | null>(null);
+  const [editingPlanId, setEditingPlanId] = React.useState<string | null>(null);
+  const [draftSaving, setDraftSaving] = React.useState(false);
+  const [draftError, setDraftError] = React.useState<string | null>(null);
+  const [draftSaved, setDraftSaved] = React.useState(false);
 
   if (!patient) {
     return (
@@ -123,24 +132,63 @@ export default function TreatmentPlanPage() {
 
   const handleApprovePreview = () => setApproved(true);
 
-  const handleSend = () => {
+  const buildPhasesPayload = () =>
+    validPhases.map((p) => ({
+      name: p.name,
+      procedure: p.procedure,
+      cost: parseFloat(p.cost) || 0,
+      status: "Upcoming" as const,
+      estDate: p.estDate || "TBD",
+    }));
+
+  const handleSaveDraft = async () => {
+    if (validPhases.length === 0 || !title.trim()) return;
+    setDraftSaving(true);
+    setDraftError(null);
+    setDraftSaved(false);
+    try {
+      const payload: NewTreatmentPlanInput = {
+        title,
+        totalCost,
+        status: "Proposed",
+        phases: buildPhasesPayload(),
+      };
+      if (editingPlanId) {
+        await updateTreatmentPlan(patient.id, editingPlanId, payload);
+      } else {
+        const plan = await addTreatmentPlan(patient.id, payload);
+        setEditingPlanId(plan.id);
+      }
+      setDraftSaved(true);
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : "Could not save this draft.");
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  const handleSend = async () => {
     if (validPhases.length === 0 || !approved) return;
-    addTreatmentPlan(patient.id, {
-      id: `tp${Date.now()}`,
-      title,
-      createdOn: "2026-07-10",
-      totalCost,
-      status: "Approved",
-      phases: validPhases.map((p, idx) => ({
-        id: `ph${Date.now()}-${idx}`,
-        name: p.name,
-        procedure: p.procedure,
-        cost: parseFloat(p.cost) || 0,
-        status: "Upcoming",
-        estDate: p.estDate || "TBD",
-      })),
-    });
-    setSent(true);
+    setSending(true);
+    setSendError(null);
+    try {
+      const payload: NewTreatmentPlanInput = {
+        title,
+        totalCost,
+        status: "Approved",
+        phases: buildPhasesPayload(),
+      };
+      if (editingPlanId) {
+        await updateTreatmentPlan(patient.id, editingPlanId, payload);
+      } else {
+        await addTreatmentPlan(patient.id, payload);
+      }
+      setSent(true);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Could not save this treatment plan.");
+    } finally {
+      setSending(false);
+    }
   };
 
   const resetForm = () => {
@@ -149,10 +197,39 @@ export default function TreatmentPlanPage() {
     setApproved(false);
     setMode("edit");
     setSent(false);
+    setSendError(null);
+    setDraftError(null);
+    setDraftSaved(false);
+    setEditingPlanId(null);
   };
 
-  const approveExisting = (plan: TreatmentPlan) => {
-    updateTreatmentPlan(patient.id, plan.id, { ...plan, status: "Approved" });
+  const loadPlanForEdit = (plan: TreatmentPlan) => {
+    setTitle(plan.title);
+    setPhases(
+      plan.phases.length
+        ? plan.phases.map((p) => ({ name: p.name, procedure: p.procedure, cost: String(p.cost), estDate: p.estDate }))
+        : [{ ...emptyPhase }]
+    );
+    setEditingPlanId(plan.id);
+    setApproved(false);
+    setSendError(null);
+    setDraftError(null);
+    setDraftSaved(false);
+    setSent(false);
+    setMode("edit");
+    setActiveTab("new");
+  };
+
+  const approveExisting = async (plan: TreatmentPlan) => {
+    setApprovingId(plan.id);
+    setApproveError(null);
+    try {
+      await updateTreatmentPlanStatus(patient.id, plan.id, "Approved");
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : "Could not approve this plan.");
+    } finally {
+      setApprovingId(null);
+    }
   };
 
   const resendExisting = (planId: string) => {
@@ -173,13 +250,14 @@ export default function TreatmentPlanPage() {
         <p className="text-sm text-muted-foreground">Build, approve, and send a phased treatment plan to {patient.name}.</p>
       </div>
 
-      <Tabs defaultValue="active">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="active">Previous Treatment Plans ({patient.treatmentPlans.length})</TabsTrigger>
           <TabsTrigger value="new">New Plan</TabsTrigger>
         </TabsList>
 
         <TabsContent value="active" className="space-y-4">
+          {approveError && <p className="text-sm text-destructive">{approveError}</p>}
           {patient.treatmentPlans.map((plan) => (
             <Card key={plan.id}>
               <CardHeader className="flex-row items-start justify-between space-y-0">
@@ -201,9 +279,19 @@ export default function TreatmentPlanPage() {
 
                 <div className="flex flex-wrap gap-2 border-t border-border pt-3">
                   {plan.status === "Proposed" && (
-                    <Button size="sm" variant="success" onClick={() => approveExisting(plan)}>
-                      <BadgeCheck className="h-3.5 w-3.5" /> Approve
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="success"
+                        disabled={approvingId === plan.id}
+                        onClick={() => approveExisting(plan)}
+                      >
+                        <BadgeCheck className="h-3.5 w-3.5" /> {approvingId === plan.id ? "Approving..." : "Approve"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => loadPlanForEdit(plan)}>
+                        <Pencil className="h-3.5 w-3.5" /> Edit Draft
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"
@@ -251,7 +339,16 @@ export default function TreatmentPlanPage() {
               </CardContent>
             </Card>
           ) : mode === "edit" ? (
-            <Card>
+            <div className="space-y-4">
+              {editingPlanId && (
+                <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                  <span>Editing a saved draft.</span>
+                  <button onClick={resetForm} className="font-medium underline underline-offset-2">
+                    Start a new plan instead
+                  </button>
+                </div>
+              )}
+              <Card>
               <CardHeader>
                 <CardTitle>Plan Details</CardTitle>
                 <CardDescription>Add each phase of the treatment with its estimated cost.</CardDescription>
@@ -279,7 +376,11 @@ export default function TreatmentPlanPage() {
                       </div>
                       <div className="space-y-1.5">
                         <Label>Estimated Date</Label>
-                        <Input value={phase.estDate} onChange={(e) => updatePhase(i, "estDate", e.target.value)} placeholder="2026-08-01" />
+                        <Input
+                          type="date"
+                          value={phase.estDate === "TBD" ? "" : phase.estDate}
+                          onChange={(e) => updatePhase(i, "estDate", e.target.value)}
+                        />
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
                         <Label>Procedure</Label>
@@ -304,11 +405,25 @@ export default function TreatmentPlanPage() {
                   </span>
                 </div>
 
-                <Button onClick={goToPreview} className="w-full" size="lg" disabled={validPhases.length === 0 || !title.trim()}>
-                  <Eye className="h-4 w-4" /> Preview Plan
-                </Button>
+                {draftError && <p className="text-sm text-destructive">{draftError}</p>}
+                {draftSaved && <p className="text-sm text-success">Draft saved — find it under "Previous Treatment Plans".</p>}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    size="lg"
+                    onClick={handleSaveDraft}
+                    disabled={validPhases.length === 0 || !title.trim() || draftSaving}
+                  >
+                    {draftSaving ? "Saving..." : "Save Draft"}
+                  </Button>
+                  <Button onClick={goToPreview} className="flex-1" size="lg" disabled={validPhases.length === 0 || !title.trim()}>
+                    <Eye className="h-4 w-4" /> Preview Plan
+                  </Button>
+                </div>
               </CardContent>
-            </Card>
+              </Card>
+            </div>
           ) : (
             <Card>
               <CardHeader className="flex-row items-start justify-between space-y-0">
@@ -336,8 +451,9 @@ export default function TreatmentPlanPage() {
                   }))}
                 />
 
+                {sendError && <p className="text-sm text-destructive">{sendError}</p>}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-                  <Button variant="outline" onClick={() => setMode("edit")}>
+                  <Button variant="outline" onClick={() => setMode("edit")} disabled={sending}>
                     <Pencil className="h-4 w-4" /> Back to Edit
                   </Button>
                   <div className="flex flex-wrap gap-2">
@@ -346,8 +462,8 @@ export default function TreatmentPlanPage() {
                         <BadgeCheck className="h-4 w-4" /> Approve Plan
                       </Button>
                     ) : (
-                      <Button onClick={handleSend}>
-                        <Send className="h-4 w-4" /> Send to Patient via WhatsApp
+                      <Button onClick={handleSend} disabled={sending}>
+                        <Send className="h-4 w-4" /> {sending ? "Sending..." : "Send to Patient via WhatsApp"}
                       </Button>
                     )}
                   </div>

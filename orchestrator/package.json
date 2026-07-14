@@ -1,0 +1,24 @@
+{
+  "name": "dentverse-orchestrator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DentVerse AI Receptionist Orchestrator — WhatsApp/Instagram/Facebook webhook ingestion, exception triage, and scheduled automation. See DentVerseDocs/02-architecture and DentVerseDocs/05-api.",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/platform-express": "^11.1.28",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}

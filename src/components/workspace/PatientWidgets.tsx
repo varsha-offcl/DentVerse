@@ -116,8 +116,10 @@ export function PatientSummaryWidget({ patient }: { patient: Patient }) {
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
-            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Hash className="h-3 w-3" /> Patient ID</p>
-            <p className="mt-0.5 font-mono text-sm font-medium">{patient.id.toUpperCase()}</p>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Hash className="h-3 w-3" /> Patient No.</p>
+            <p className="mt-0.5 text-sm font-medium" title={patient.id}>
+              {patient.patientNumber ? `#${patient.patientNumber}` : "—"}
+            </p>
           </div>
           <div>
             <p className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> Phone</p>
@@ -420,22 +422,37 @@ export function ClinicalImagesWidget({ patient }: { patient: Patient }) {
   const { addPatientImage, removePatientImage } = useAppState();
   const [tab, setTab] = React.useState<ImageCategory>("Clinical Photo");
   const [preview, setPreview] = React.useState<string | null>(null);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    Array.from(files).forEach((file) => {
-      const url = URL.createObjectURL(file);
-      addPatientImage(patient.id, {
-        id: `img${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        url,
-        category: tab,
-        label: file.name,
-        uploadedAt: "2026-07-10",
-      });
-    });
-    e.target.value = "";
+    setUploading(true);
+    setUploadError(null);
+    try {
+      for (const file of Array.from(files)) {
+        await addPatientImage(patient.id, file, tab);
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Could not upload one or more images.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDelete = async (imageId: string) => {
+    setDeletingId(imageId);
+    try {
+      await removePatientImage(patient.id, imageId);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Could not delete this image.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -447,11 +464,12 @@ export function ClinicalImagesWidget({ patient }: { patient: Patient }) {
               <TabsTrigger key={c} value={c}>{c}s</TabsTrigger>
             ))}
           </TabsList>
-          <Button size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" /> Upload
+          <Button size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            <Upload className="h-3.5 w-3.5" /> {uploading ? "Uploading..." : "Upload"}
           </Button>
           <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={handleUpload} />
         </div>
+        {uploadError && <p className="mt-2 text-xs text-destructive">{uploadError}</p>}
 
         {IMAGE_CATEGORIES.map((c) => {
           const images = patient.images.filter((img) => img.category === c);
@@ -475,8 +493,9 @@ export function ClinicalImagesWidget({ patient }: { patient: Patient }) {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          removePatientImage(patient.id, img.id);
+                          void handleDelete(img.id);
                         }}
+                        disabled={deletingId === img.id}
                         className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
                         title="Delete image"
                       >
@@ -504,31 +523,48 @@ export function ClinicalImagesWidget({ patient }: { patient: Patient }) {
 
 export function ReportsWidget({ patient }: { patient: Patient }) {
   const { addPatientReport, removePatientReport } = useAppState();
+  const [uploading, setUploading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    Array.from(files).forEach((file) => {
-      addPatientReport(patient.id, {
-        id: `rep${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: file.name,
-        type: "Uploaded Document",
-        uploadedAt: "2026-07-10",
-        url: URL.createObjectURL(file),
-      });
-    });
-    e.target.value = "";
+    setUploading(true);
+    setError(null);
+    try {
+      for (const file of Array.from(files)) {
+        await addPatientReport(patient.id, file);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not upload one or more reports.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDelete = async (reportId: string) => {
+    setDeletingId(reportId);
+    try {
+      await removePatientReport(patient.id, reportId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete this report.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-          <Upload className="h-3.5 w-3.5" /> Upload Report
+        <Button size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          <Upload className="h-3.5 w-3.5" /> {uploading ? "Uploading..." : "Upload Report"}
         </Button>
         <input ref={fileInputRef} type="file" multiple hidden onChange={handleUpload} />
       </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
       {patient.reports.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No reports on file.</p>
       ) : (
@@ -545,7 +581,8 @@ export function ReportsWidget({ patient }: { patient: Patient }) {
                 </div>
               </a>
               <button
-                onClick={() => removePatientReport(patient.id, r.id)}
+                onClick={() => handleDelete(r.id)}
+                disabled={deletingId === r.id}
                 className="shrink-0 text-muted-foreground hover:text-destructive"
                 title="Delete report"
               >

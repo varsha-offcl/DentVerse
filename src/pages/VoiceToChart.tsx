@@ -51,6 +51,8 @@ export default function VoiceToChart() {
   const [seconds, setSeconds] = React.useState(0);
   const [title, setTitle] = React.useState("");
   const [soap, setSoap] = React.useState({ subjective: "", objective: "", assessment: "", plan: "" });
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (stage !== "recording") return;
@@ -94,15 +96,21 @@ export default function VoiceToChart() {
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-  const handleSave = () => {
-    addChartNote(patient.id, {
-      id: `c${Date.now()}`,
-      date: "2026-07-10",
-      title: title || "Untitled Visit Note",
-      recordedVia: "Voice-to-Chart AI",
-      soap,
-    });
-    setStage("saved");
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await addChartNote(patient.id, {
+        title: title || "Untitled Visit Note",
+        recordedVia: "Voice-to-Chart AI",
+        soap,
+      });
+      setStage("saved");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save this chart note.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const reset = () => {
@@ -293,12 +301,13 @@ export default function VoiceToChart() {
                 </Label>
                 <Textarea value={soap.plan} onChange={(e) => setSoap({ ...soap, plan: e.target.value })} rows={2} />
               </div>
+              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" onClick={reset}>
+                <Button variant="outline" onClick={reset} disabled={saving}>
                   <RotateCcw className="h-4 w-4" /> Discard & Re-record
                 </Button>
-                <Button onClick={handleSave} className="flex-1">
-                  <CheckCircle2 className="h-4 w-4" /> Save to Patient Chart
+                <Button onClick={handleSave} className="flex-1" disabled={saving}>
+                  <CheckCircle2 className="h-4 w-4" /> {saving ? "Saving..." : "Save to Patient Chart"}
                 </Button>
               </div>
             </CardContent>

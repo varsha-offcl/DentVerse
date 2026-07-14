@@ -34,9 +34,13 @@ import {
   Tooltip,
 } from "recharts";
 import { useAppState } from "@/context/AppStateContext";
-import { currentAdmin, staffDoctors } from "@/data/roles";
+import { staffDoctors } from "@/data/roles";
 import { monthlyTrends, clinicStats, whatsappAnalytics, broadcastAnalytics } from "@/data/adminData";
 import { weeklyAvailability } from "@/data/mockData";
+// clinicStats.totalPatients/activePatients/newPatientsThisMonth are NOT
+// used below — computed from real `patients` instead. noShowRate,
+// aiResolutionRate (needs M5), and patientSatisfaction (no rating system
+// exists) remain correctly mock.
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +52,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const TODAY = "2026-07-10";
+const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY_LABEL = new Date().toLocaleDateString("en-IN", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
 
 function ChartTooltip({ active, payload, label, formatter }: any) {
   if (!active || !payload?.length) return null;
@@ -61,15 +71,20 @@ function ChartTooltip({ active, payload, label, formatter }: any) {
 }
 
 export default function AdminDashboard() {
-  const { appointments } = useAppState();
+  const { appointments, patients, profile } = useAppState();
   const [doctorId, setDoctorId] = React.useState("all");
 
   const selectedDoctor = staffDoctors.find((d) => d.id === doctorId);
 
+  const currentMonthPrefix = TODAY.slice(0, 7);
+  const totalPatients = patients.length;
+  const activePatients = patients.filter((p) => p.lastVisit !== "—" || p.nextVisit).length;
+  const newPatientsThisMonth = patients.filter((p) => p.memberSince.startsWith(currentMonthPrefix)).length;
+
   const statTiles = [
-    { label: "Total Patients", value: clinicStats.totalPatients, icon: Users, tint: "bg-secondary text-primary" },
-    { label: "Active Patients", value: clinicStats.activePatients, icon: UserCheck, tint: "bg-success/10 text-success" },
-    { label: "New This Month", value: clinicStats.newPatientsThisMonth, icon: UserPlus, tint: "bg-secondary text-primary" },
+    { label: "Total Patients", value: totalPatients, icon: Users, tint: "bg-secondary text-primary" },
+    { label: "Active Patients", value: activePatients, icon: UserCheck, tint: "bg-success/10 text-success" },
+    { label: "New This Month", value: newPatientsThisMonth, icon: UserPlus, tint: "bg-secondary text-primary" },
     { label: "Today's Appointments", value: appointments.filter((a) => a.date === TODAY && a.status !== "cancelled").length, icon: CalendarClock, tint: "bg-secondary text-primary" },
   ];
 
@@ -101,8 +116,8 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Welcome back, {currentAdmin.name.split(" ")[0]}</h1>
-          <p className="text-sm text-muted-foreground">Clinic-wide overview for {currentAdmin.clinic} · Friday, 10 July 2026</p>
+          <h1 className="text-2xl font-bold tracking-tight">Welcome back, {profile?.firstName}</h1>
+          <p className="text-sm text-muted-foreground">Clinic-wide overview for {profile?.clinicName} · {TODAY_LABEL}</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Doctor Filter</span>

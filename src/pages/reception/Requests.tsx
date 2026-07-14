@@ -1,5 +1,6 @@
+import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { Inbox, Check, X, Bot, Phone } from "lucide-react";
+import { Inbox, Check, X, Bot, Phone, AlertTriangle } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,20 @@ export default function ReceptionRequests() {
   const navigate = useNavigate();
   const { appointments, setAppointmentStatus } = useAppState();
   const pending = appointments.filter((a) => a.status === "pending");
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleStatus = async (id: string, status: "confirmed" | "cancelled") => {
+    setBusyId(id);
+    setError(null);
+    try {
+      await setAppointmentStatus(id, status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this appointment.");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -19,6 +34,12 @@ export default function ReceptionRequests() {
           Requests captured by the AI receptionist over WhatsApp, awaiting front-desk confirmation.
         </p>
       </div>
+
+      {error && (
+        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+        </p>
+      )}
 
       {pending.length === 0 ? (
         <Card>
@@ -58,10 +79,10 @@ export default function ReceptionRequests() {
                   <Button variant="outline" size="sm" onClick={() => navigate("/reception/communication")}>
                     View Conversation
                   </Button>
-                  <Button variant="success" size="sm" onClick={() => setAppointmentStatus(a.id, "confirmed")}>
+                  <Button variant="success" size="sm" disabled={busyId === a.id} onClick={() => handleStatus(a.id, "confirmed")}>
                     <Check className="h-4 w-4" /> Confirm
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => setAppointmentStatus(a.id, "cancelled")}>
+                  <Button variant="destructive" size="sm" disabled={busyId === a.id} onClick={() => handleStatus(a.id, "cancelled")}>
                     <X className="h-4 w-4" /> Decline
                   </Button>
                 </div>

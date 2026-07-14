@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import AppointmentActions from "@/components/shared/AppointmentActions";
 
 export default function Confirmed() {
   const navigate = useNavigate();
@@ -62,9 +63,12 @@ export default function Confirmed() {
                     </Badge>
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => navigate(`/patient/${a.patientId}`)}>
-                      View
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <AppointmentActions appointment={a} />
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/patient/${a.patientId}`)}>
+                        View
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

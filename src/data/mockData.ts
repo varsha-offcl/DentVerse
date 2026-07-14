@@ -17,6 +17,7 @@ export interface Appointment {
   source: "WhatsApp AI" | "Manual" | "Phone";
   notes?: string;
   requestedAt?: string;
+  doctorId?: string;
   doctorName?: string;
   checkInStatus?: CheckInStatus;
 }
@@ -117,6 +118,10 @@ export interface Invoice {
 
 export interface Patient {
   id: string;
+  // Human-friendly, per-tenant sequential display number — never used for
+  // routing/joins, only shown to staff. Optional because the old static
+  // demo records (unused at runtime now) predate this field.
+  patientNumber?: number;
   name: string;
   avatarInitials: string;
   phone: string;

@@ -1,5 +1,6 @@
+import * as React from "react";
 import { ScrollText, Info, AlertTriangle, OctagonAlert } from "lucide-react";
-import { auditLogs, systemLogs } from "@/data/adminData";
+import { useAppState } from "@/context/AppStateContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,6 +13,12 @@ const LEVEL_META = {
 };
 
 export default function LogsPage() {
+  const { auditLogs, systemLogs, loadAdminLogs } = useAppState();
+
+  React.useEffect(() => {
+    void loadAdminLogs();
+  }, [loadAdminLogs]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -26,6 +33,9 @@ export default function LogsPage() {
         </TabsList>
 
         <TabsContent value="audit" className="space-y-2">
+          {auditLogs.length === 0 && (
+            <p className="py-10 text-center text-sm text-muted-foreground">No staff activity recorded yet.</p>
+          )}
           {auditLogs.map((log) => (
             <Card key={log.id}>
               <CardContent className="flex items-center gap-3 p-4">
@@ -45,6 +55,11 @@ export default function LogsPage() {
         </TabsContent>
 
         <TabsContent value="system" className="space-y-2">
+          {systemLogs.length === 0 && (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              No system events yet — this fills in once WhatsApp, AI, and scheduled-job integrations are live.
+            </p>
+          )}
           {systemLogs.map((log) => {
             const meta = LEVEL_META[log.level];
             return (

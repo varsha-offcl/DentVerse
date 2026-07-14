@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/context/AppStateContext";
-import { currentDoctor } from "@/data/mockData";
 import { Badge } from "@/components/ui/badge";
 import ProfileMenu from "@/components/shared/ProfileMenu";
 
@@ -33,7 +32,7 @@ const navItems = [
 
 export default function DoctorShell() {
   const navigate = useNavigate();
-  const { appointments, notifications } = useAppState();
+  const { appointments, notifications, profile } = useAppState();
 
   const pendingCount = appointments.filter((a) => a.status === "pending").length;
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -110,9 +109,9 @@ export default function DoctorShell() {
           </button>
 
           <ProfileMenu
-            name={currentDoctor.name}
-            email={currentDoctor.email}
-            avatarInitials={currentDoctor.avatarInitials}
+            name={profile?.name ?? ""}
+            email={profile?.email ?? ""}
+            avatarInitials={profile?.avatarInitials ?? ""}
             basePath="/dashboard"
           />
         </header>

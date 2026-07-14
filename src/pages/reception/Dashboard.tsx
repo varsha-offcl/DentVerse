@@ -13,7 +13,6 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
-import { currentReceptionist } from "@/data/roles";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,11 +31,17 @@ function statusBadgeVariant(status: string) {
   }
 }
 
-const TODAY = "2026-07-10";
+const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY_LABEL = new Date().toLocaleDateString("en-IN", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
 
 export default function ReceptionDashboard() {
   const navigate = useNavigate();
-  const { appointments, notifications, rescheduleRequests, cancellationRequests } = useAppState();
+  const { appointments, notifications, rescheduleRequests, cancellationRequests, profile } = useAppState();
 
   const todaysAppointments = appointments
     .filter((a) => a.date === TODAY && a.status !== "cancelled")
@@ -70,8 +75,8 @@ export default function ReceptionDashboard() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Good morning, {currentReceptionist.name.split(" ")[0]} 👋</h1>
-          <p className="text-sm text-muted-foreground">Friday, 10 July 2026 · Front desk overview for {currentReceptionist.clinic}.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Good morning, {profile?.firstName} 👋</h1>
+          <p className="text-sm text-muted-foreground">{TODAY_LABEL} · Front desk overview for {profile?.clinicName}.</p>
         </div>
         <Button size="lg" onClick={() => navigate("/reception/checkin")}>
           <UserCheck className="h-4 w-4" />

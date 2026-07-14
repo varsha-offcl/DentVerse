@@ -3,7 +3,11 @@ import { useAppState } from "@/context/AppStateContext";
 import { ROLE_HOME, type Role } from "@/data/roles";
 
 export default function RequireRole({ allow }: { allow: Role[] }) {
-  const { loggedIn, role } = useAppState();
+  const { loggedIn, role, authLoading } = useAppState();
+
+  if (authLoading) {
+    return null;
+  }
 
   if (!loggedIn || !role) {
     return <Navigate to="/login" replace />;

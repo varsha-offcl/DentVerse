@@ -96,7 +96,7 @@ const WIDGET_TITLE: Record<WidgetId, string> = {
 export default function PatientWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { patients, widgetLayout, saveWidgetLayout, resetWidgetLayout, toggleWidgetSpan } = useAppState();
+  const { patients, widgetLayout, saveWidgetLayout, resetWidgetLayout, toggleWidgetSpan, loadPatientClinicalData } = useAppState();
   const patient = patients.find((p) => p.id === id);
 
   const [editMode, setEditMode] = React.useState(false);
@@ -108,6 +108,13 @@ export default function PatientWorkspace() {
   React.useEffect(() => {
     if (!editMode) setDraftLayout(widgetLayout);
   }, [widgetLayout, editMode]);
+
+  // Chart notes, prescriptions, treatment plans, images, and reports are
+  // loaded lazily here rather than eagerly at login — see AppStateContext.
+  React.useEffect(() => {
+    if (!id) return;
+    void loadPatientClinicalData(id);
+  }, [id, loadPatientClinicalData]);
 
   if (!patient) {
     return (

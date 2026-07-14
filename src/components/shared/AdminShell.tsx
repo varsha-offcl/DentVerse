@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/context/AppStateContext";
-import { currentAdmin } from "@/data/roles";
 import { Badge } from "@/components/ui/badge";
 import ProfileMenu from "@/components/shared/ProfileMenu";
 
@@ -29,7 +28,7 @@ const navItems = [
 
 export default function AdminShell() {
   const navigate = useNavigate();
-  const { notifications } = useAppState();
+  const { notifications, profile } = useAppState();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
@@ -100,9 +99,9 @@ export default function AdminShell() {
           </button>
 
           <ProfileMenu
-            name={currentAdmin.name}
-            email={currentAdmin.email}
-            avatarInitials={currentAdmin.avatarInitials}
+            name={profile?.name ?? ""}
+            email={profile?.email ?? ""}
+            avatarInitials={profile?.avatarInitials ?? ""}
             basePath="/admin"
           />
         </header>

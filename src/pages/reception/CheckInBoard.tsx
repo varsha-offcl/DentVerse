@@ -1,12 +1,13 @@
+import * as React from "react";
 import { useAppState } from "@/context/AppStateContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Clock, UserCheck, Stethoscope, LogOut, Circle } from "lucide-react";
+import { Clock, UserCheck, Stethoscope, LogOut, Circle, AlertTriangle } from "lucide-react";
 import type { CheckInStatus } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
-const TODAY = "2026-07-10";
+const TODAY = new Date().toISOString().slice(0, 10);
 
 const COLUMNS: { status: CheckInStatus; label: string; icon: React.ElementType; next?: CheckInStatus; nextLabel?: string; tint: string }[] = [
   { status: "Not Arrived", label: "Not Arrived", icon: Clock, next: "Checked In", nextLabel: "Check In", tint: "text-muted-foreground" },
@@ -17,8 +18,28 @@ const COLUMNS: { status: CheckInStatus; label: string; icon: React.ElementType; 
 
 export default function CheckInBoard() {
   const { appointments, setAppointmentCheckIn } = useAppState();
+  const [movingId, setMovingId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const todaysConfirmed = appointments.filter((a) => a.date === TODAY && a.status === "confirmed");
+  // "Checked Out" flips the appointment's status to "completed" (see
+  // AppStateContext.setAppointmentCheckIn) so a finished visit stays
+  // visible in its column instead of disappearing from the board.
+  const todaysConfirmed = appointments.filter(
+    (a) => a.date === TODAY && (a.status === "confirmed" || a.status === "completed")
+  );
+
+  const handleMove = async (appointmentId: string, next: CheckInStatus | undefined) => {
+    if (!next) return;
+    setMovingId(appointmentId);
+    setError(null);
+    try {
+      await setAppointmentCheckIn(appointmentId, next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this patient's status.");
+    } finally {
+      setMovingId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -26,6 +47,12 @@ export default function CheckInBoard() {
         <h1 className="text-2xl font-bold tracking-tight">Check-in / Check-out</h1>
         <p className="text-sm text-muted-foreground">Track today's patients as they move through their visit.</p>
       </div>
+
+      {error && (
+        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map((col) => {
@@ -54,9 +81,10 @@ export default function CheckInBoard() {
                         size="sm"
                         variant="outline"
                         className="mt-2 w-full"
-                        onClick={() => setAppointmentCheckIn(a.id, col.next)}
+                        disabled={movingId === a.id}
+                        onClick={() => handleMove(a.id, col.next)}
                       >
-                        {col.nextLabel}
+                        {movingId === a.id ? "Updating..." : col.nextLabel}
                       </Button>
                     )}
                   </div>
