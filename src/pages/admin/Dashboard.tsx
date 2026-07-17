@@ -10,7 +10,6 @@ import {
   TrendingDown,
   Bot,
   Star,
-  IndianRupee,
   Megaphone,
   MessageCircle,
   ArrowRight,
@@ -19,7 +18,6 @@ import {
   ScrollText,
   Stethoscope,
   CheckCircle2,
-  RotateCcw,
   Clock,
 } from "lucide-react";
 import {
@@ -34,9 +32,8 @@ import {
   Tooltip,
 } from "recharts";
 import { useAppState } from "@/context/AppStateContext";
-import { staffDoctors } from "@/data/roles";
+import { supabase } from "@/lib/supabase";
 import { monthlyTrends, clinicStats, whatsappAnalytics, broadcastAnalytics } from "@/data/adminData";
-import { weeklyAvailability } from "@/data/mockData";
 // clinicStats.totalPatients/activePatients/newPatientsThisMonth are NOT
 // used below — computed from real `patients` instead. noShowRate,
 // aiResolutionRate (needs M5), and patientSatisfaction (no rating system
@@ -70,11 +67,44 @@ function ChartTooltip({ active, payload, label, formatter }: any) {
   );
 }
 
-export default function AdminDashboard() {
-  const { appointments, patients, profile } = useAppState();
-  const [doctorId, setDoctorId] = React.useState("all");
+interface DoctorAvailabilityRow {
+  day: string;
+  enabled: boolean;
+  slots: string;
+}
 
-  const selectedDoctor = staffDoctors.find((d) => d.id === doctorId);
+export default function AdminDashboard() {
+  const { appointments, patients, staffMembers, loadStaffDirectory, profile } = useAppState();
+  const [doctorId, setDoctorId] = React.useState("all");
+  const [doctorAvailability, setDoctorAvailability] = React.useState<DoctorAvailabilityRow[]>([]);
+
+  React.useEffect(() => {
+    void loadStaffDirectory();
+  }, [loadStaffDirectory]);
+
+  const doctors = staffMembers.filter((s) => s.role === "doctor");
+  const selectedDoctor = doctors.find((d) => d.id === doctorId);
+
+  React.useEffect(() => {
+    if (!selectedDoctor) {
+      setDoctorAvailability([]);
+      return;
+    }
+    let active = true;
+    supabase
+      .from("doctor_availability")
+      .select("day_of_week, enabled, slots_label")
+      .eq("doctor_id", selectedDoctor.id)
+      .then(({ data }) => {
+        if (!active) return;
+        setDoctorAvailability(
+          (data ?? []).map((row) => ({ day: row.day_of_week, enabled: row.enabled, slots: row.slots_label }))
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedDoctor]);
 
   const currentMonthPrefix = TODAY.slice(0, 7);
   const totalPatients = patients.length;
@@ -88,24 +118,32 @@ export default function AdminDashboard() {
     { label: "Today's Appointments", value: appointments.filter((a) => a.date === TODAY && a.status !== "cancelled").length, icon: CalendarClock, tint: "bg-secondary text-primary" },
   ];
 
+  const doctorAppointments = selectedDoctor ? appointments.filter((a) => a.doctorId === selectedDoctor.id) : [];
+  const doctorNonCancelled = doctorAppointments.filter((a) => a.status !== "cancelled");
+  const doctorCompletionRate =
+    doctorNonCancelled.length > 0
+      ? Math.round((doctorNonCancelled.filter((a) => a.status === "completed").length / doctorNonCancelled.length) * 100)
+      : 0;
+  const doctorAssignedPatients = new Set(doctorNonCancelled.map((a) => a.patientId)).size;
+
   const doctorStatTiles = selectedDoctor
     ? [
         {
           label: "Today's Appointments",
-          value: appointments.filter((a) => a.doctorName === selectedDoctor.name && a.date === TODAY && a.status !== "cancelled").length,
+          value: doctorAppointments.filter((a) => a.date === TODAY && a.status !== "cancelled").length,
           icon: CalendarDays,
           tint: "bg-secondary text-primary",
         },
         {
           label: "Upcoming Appointments",
-          value: appointments.filter((a) => a.doctorName === selectedDoctor.name && a.date > TODAY && (a.status === "confirmed" || a.status === "pending")).length,
+          value: doctorAppointments.filter((a) => a.date > TODAY && (a.status === "confirmed" || a.status === "pending")).length,
           icon: CalendarClock,
           tint: "bg-secondary text-primary",
         },
-        { label: "Assigned Patients", value: selectedDoctor.patientsCount, icon: Users, tint: "bg-secondary text-primary" },
+        { label: "Assigned Patients", value: doctorAssignedPatients, icon: Users, tint: "bg-secondary text-primary" },
         {
           label: "Pending Requests",
-          value: appointments.filter((a) => a.doctorName === selectedDoctor.name && a.status === "pending").length,
+          value: doctorAppointments.filter((a) => a.status === "pending").length,
           icon: Inbox,
           tint: "bg-warning/15 text-warning-foreground",
         },
@@ -127,7 +165,7 @@ export default function AdminDashboard() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Doctors</SelectItem>
-              {staffDoctors.map((d) => (
+              {doctors.map((d) => (
                 <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
               ))}
             </SelectContent>
@@ -370,91 +408,22 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <IndianRupee className="h-4 w-4 text-success" /> Revenue Generated
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">₹{selectedDoctor.revenueThisMonth.toLocaleString("en-IN")}</p>
-                <p className="mt-1 text-xs text-muted-foreground">This month</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
                   <CheckCircle2 className="h-4 w-4 text-success" /> Completion Rate
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold">{selectedDoctor.completionRate}%</p>
-                <Progress value={selectedDoctor.completionRate} className="mt-2" />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingDown className="h-4 w-4 text-destructive" /> No-show Rate
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{selectedDoctor.noShowRate}%</p>
-                <Progress value={selectedDoctor.noShowRate} className="mt-2" />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <RotateCcw className="h-4 w-4 text-primary" /> Follow-up Completion
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{selectedDoctor.followUpCompletionRate}%</p>
-                <Progress value={selectedDoctor.followUpCompletionRate} className="mt-2" />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Star className="h-4 w-4 text-warning-foreground" /> Patient Satisfaction
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{selectedDoctor.rating}/5</p>
-                <Progress value={selectedDoctor.rating * 20} className="mt-2" />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Bot className="h-4 w-4 text-primary" /> AI Resolution Rate
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{selectedDoctor.aiResolutionRate}%</p>
-                <Progress value={selectedDoctor.aiResolutionRate} className="mt-2" />
+                <p className="text-2xl font-bold">{doctorCompletionRate}%</p>
+                <Progress value={doctorCompletionRate} className="mt-2" />
               </CardContent>
             </Card>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Revenue, no-show rate, follow-up completion, patient satisfaction, AI resolution, and broadcast stats aren't
+            available yet — they depend on billing attribution, follow-up tracking, a rating system, and the AI
+            receptionist/broadcast milestones, none of which exist yet.
+          </p>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Megaphone className="h-4 w-4 text-primary" /> Broadcast Statistics
-                </CardTitle>
-                <CardDescription>Broadcasts sent to this doctor's patients</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Broadcasts Sent</p>
-                  <p className="text-xl font-bold">{selectedDoctor.broadcastsSent}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Avg Delivery Rate</p>
-                  <p className="text-xl font-bold text-success">{selectedDoctor.broadcastDeliveryRate}%</p>
-                </div>
-              </CardContent>
-            </Card>
-
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -463,7 +432,7 @@ export default function AdminDashboard() {
                 <CardDescription>Read-only — set by the doctor</CardDescription>
               </CardHeader>
               <CardContent className="space-y-1.5">
-                {weeklyAvailability.map((d) => (
+                {doctorAvailability.map((d) => (
                   <div key={d.day} className="flex items-center justify-between rounded-md px-2 py-1.5">
                     <span className="text-sm font-medium">{d.day}</span>
                     {d.enabled ? (
@@ -473,6 +442,9 @@ export default function AdminDashboard() {
                     )}
                   </div>
                 ))}
+                {doctorAvailability.length === 0 && (
+                  <p className="py-4 text-center text-sm text-muted-foreground">No availability set yet.</p>
+                )}
               </CardContent>
             </Card>
           </div>

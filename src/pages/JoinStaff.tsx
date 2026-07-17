@@ -1,12 +1,12 @@
 import * as React from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Stethoscope, Lock, User, ArrowRight, Mail, Building2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAppState } from "@/context/AppStateContext";
-import { ROLE_HOME, ROLE_LABELS } from "@/data/roles";
+import { ROLE_LABELS } from "@/data/roles";
 import type { Role } from "@/data/roles";
 import { supabase } from "@/lib/supabase";
 import { stashPendingStaffInvite, clearPendingStaffInvite } from "@/lib/pendingStaffInvite";
@@ -21,7 +21,6 @@ interface InviteDetails {
 
 export default function JoinStaff() {
   const { loggedIn, role, authLoading, logout } = useAppState();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("invite");
 
@@ -51,6 +50,7 @@ export default function JoinStaff() {
   // sync arriving later is simply ignored.
   const initialAuthCheckedRef = React.useRef(false);
   const [signingOutStale, setSigningOutStale] = React.useState(false);
+  const [joined, setJoined] = React.useState(false);
 
   // A pre-existing session blocks accept_staff_invite (it requires a
   // profile-less auth.uid()) and previously left the visitor stuck reading
@@ -68,13 +68,16 @@ export default function JoinStaff() {
 
   // Once the newly-created account's profile resolves — immediately if
   // email confirmation is off, since accept_staff_invite then runs right
-  // away — send them to their real dashboard instead of leaving them
-  // stranded on this page.
+  // away — sign them back out and show a success screen instead of
+  // dropping them straight into their dashboard. Deliberate onboarding
+  // choice: joining and signing in are two separate, explicit steps, not
+  // one implicit one.
   React.useEffect(() => {
-    if (hasJoinedRef.current && loggedIn && role) {
-      navigate(ROLE_HOME[role], { replace: true });
+    if (hasJoinedRef.current && loggedIn && role && !joined) {
+      setJoined(true);
+      void logout();
     }
-  }, [loggedIn, role, navigate]);
+  }, [loggedIn, role, joined, logout]);
 
   React.useEffect(() => {
     if (!token) {
@@ -175,7 +178,7 @@ export default function JoinStaff() {
             <p className="text-center text-sm text-muted-foreground">Finishing setup...</p>
           )}
 
-          {!checking && !authLoading && invite && !loggedIn && !info && (
+          {!checking && !authLoading && invite && !loggedIn && !info && !joined && (
             <form onSubmit={handleJoin} className="space-y-4">
               <div className="space-y-2 text-left">
                 <Label htmlFor="join-email">Email</Label>
@@ -231,9 +234,21 @@ export default function JoinStaff() {
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{info}</span>
               </div>
-              <Link to="/login" className="text-sm font-medium text-primary hover:underline">
-                Go to Sign In
-              </Link>
+              <Button asChild className="w-full">
+                <Link to="/login">Go to Login</Link>
+              </Button>
+            </div>
+          )}
+
+          {joined && (
+            <div className="space-y-4 text-center">
+              <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 p-3 text-left text-sm text-success">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Account created successfully! Sign in with your new email and password to get started.</span>
+              </div>
+              <Button asChild className="w-full">
+                <Link to="/login">Go to Login</Link>
+              </Button>
             </div>
           )}
         </CardContent>
