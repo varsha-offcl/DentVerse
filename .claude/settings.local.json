@@ -8,7 +8,11 @@
       "Bash(npm uninstall *)",
       "Bash(timeout 40 node verify.mjs)",
       "Bash(timeout 90 node verify3.mjs)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(timeout 40 node verify6.mjs)",
+      "Bash(grep -n \"    removePatientReport,$\" src/context/AppStateContext.tsx)",
+      "Bash(timeout 90 node verify7.mjs)",
+      "Bash(git -C /c/work/Dentverse show --stat 0d34250)"
     ]
   }
 }

@@ -5,12 +5,22 @@ import { useAppState } from "@/context/AppStateContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-const monthDays = Array.from({ length: 31 }, (_, i) => i + 1);
 const weekDayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-// July 2026: 1 Jul 2026 is a Wednesday
-const firstDayOffset = 3;
+const monthNames = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function firstDayOffsetFor(year: number, month: number) {
+  return new Date(year, month, 1).getDay();
+}
 
 function statusColor(status: string) {
   switch (status) {
@@ -28,17 +38,51 @@ function statusColor(status: string) {
 export default function CalendarView() {
   const navigate = useNavigate();
   const { appointments } = useAppState();
-  const [selectedDay, setSelectedDay] = React.useState(10);
+  const today = React.useMemo(() => new Date(), []);
+  const [viewYear, setViewYear] = React.useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = React.useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = React.useState(today.getDate());
+
+  const monthDays = React.useMemo(
+    () => Array.from({ length: daysInMonth(viewYear, viewMonth) }, (_, i) => i + 1),
+    [viewYear, viewMonth]
+  );
+  const firstDayOffset = firstDayOffsetFor(viewYear, viewMonth);
+  const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
 
   const apptsByDay: Record<number, typeof appointments> = {};
   appointments.forEach((a) => {
-    const day = parseInt(a.date.split("-")[2], 10);
-    if (a.date.startsWith("2026-07")) {
+    if (a.date.startsWith(monthPrefix)) {
+      const day = parseInt(a.date.split("-")[2], 10);
       apptsByDay[day] = apptsByDay[day] ? [...apptsByDay[day], a] : [a];
     }
   });
 
   const selectedAppts = (apptsByDay[selectedDay] || []).sort((a, b) => a.time.localeCompare(b.time));
+
+  const goToPrevMonth = () => {
+    setSelectedDay(1);
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear((y) => y - 1);
+    } else {
+      setViewMonth((m) => m - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    setSelectedDay(1);
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear((y) => y + 1);
+    } else {
+      setViewMonth((m) => m + 1);
+    }
+  };
+
+  const yearOptions = Array.from({ length: 7 }, (_, i) => today.getFullYear() - 3 + i);
+  if (!yearOptions.includes(viewYear)) yearOptions.push(viewYear);
+  yearOptions.sort((a, b) => a - b);
 
   return (
     <div className="space-y-6">
@@ -48,11 +92,21 @@ export default function CalendarView() {
           <p className="text-sm text-muted-foreground">Full schedule across all appointment statuses.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon">
+          <Button variant="outline" size="icon" onClick={goToPrevMonth} aria-label="Previous month">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm font-semibold">July 2026</span>
-          <Button variant="outline" size="icon">
+          <span className="w-28 text-center text-sm font-semibold">{monthNames[viewMonth]}</span>
+          <Select value={String(viewYear)} onValueChange={(v) => { setViewYear(Number(v)); setSelectedDay(1); }}>
+            <SelectTrigger className="w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map((y) => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" onClick={goToNextMonth} aria-label="Next month">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -73,6 +127,8 @@ export default function CalendarView() {
               {monthDays.map((day) => {
                 const dayAppts = apptsByDay[day] || [];
                 const isSelected = day === selectedDay;
+                const isToday =
+                  day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
                 return (
                   <button
                     key={day}
@@ -80,7 +136,7 @@ export default function CalendarView() {
                     className={cn(
                       "flex h-20 flex-col items-start rounded-lg border p-1.5 text-left transition-colors",
                       isSelected ? "border-primary bg-secondary" : "border-border hover:bg-accent",
-                      day === 10 && !isSelected && "border-primary/50"
+                      isToday && !isSelected && "border-primary/50"
                     )}
                   >
                     <span className={cn("text-xs font-semibold", isSelected && "text-primary")}>{day}</span>
@@ -101,7 +157,7 @@ export default function CalendarView() {
 
         <Card>
           <CardContent className="p-5">
-            <h3 className="font-semibold">July {selectedDay}, 2026</h3>
+            <h3 className="font-semibold">{monthNames[viewMonth]} {selectedDay}, {viewYear}</h3>
             <p className="text-xs text-muted-foreground">{selectedAppts.length} appointment{selectedAppts.length !== 1 ? "s" : ""}</p>
             <div className="mt-4 space-y-3">
               {selectedAppts.map((a) => (
