@@ -50,6 +50,7 @@ export default function JoinStaff() {
   // sync arriving later is simply ignored.
   const initialAuthCheckedRef = React.useRef(false);
   const [signingOutStale, setSigningOutStale] = React.useState(false);
+  const [signOutStuck, setSignOutStuck] = React.useState(false);
   const [joined, setJoined] = React.useState(false);
 
   // A pre-existing session blocks accept_staff_invite (it requires a
@@ -57,14 +58,34 @@ export default function JoinStaff() {
   // an explanation with a manual "Sign Out" button. This page has exactly
   // one purpose — accept this specific invite — so a stale session here is
   // never worth preserving; sign it out automatically instead.
+  //
+  // Called directly (not via the shared context `logout`) so a failure can
+  // be caught here: `logout()` fires-and-forgets `supabase.auth.signOut()`
+  // with no error handling, which previously left this exact screen stuck
+  // forever with no escape hatch if the sign-out call ever failed or the
+  // resulting auth-state change never arrived (e.g. an already-expired
+  // stale session, or a flaky network on the sign-out request itself).
   React.useEffect(() => {
     if (authLoading || initialAuthCheckedRef.current) return;
     initialAuthCheckedRef.current = true;
     if (loggedIn) {
       setSigningOutStale(true);
-      void logout();
+      supabase.auth.signOut().catch((err) => {
+        console.error("[JoinStaff] Failed to sign out stale session:", err);
+        setSignOutStuck(true);
+      });
     }
-  }, [authLoading, loggedIn, logout]);
+  }, [authLoading, loggedIn]);
+
+  // Belt-and-suspenders: even if signOut() resolves without throwing, fall
+  // back to a manual escape hatch if `loggedIn` hasn't actually cleared
+  // within a few seconds, rather than leaving the "Switching accounts..."
+  // message showing forever with no way to proceed.
+  React.useEffect(() => {
+    if (!signingOutStale || !loggedIn || signOutStuck) return;
+    const timer = window.setTimeout(() => setSignOutStuck(true), 6000);
+    return () => window.clearTimeout(timer);
+  }, [signingOutStale, loggedIn, signOutStuck]);
 
   // Once the newly-created account's profile resolves — immediately if
   // email confirmation is off, since accept_staff_invite then runs right
@@ -171,7 +192,28 @@ export default function JoinStaff() {
           )}
 
           {signingOutStale && loggedIn && !hasJoinedRef.current && (
-            <p className="text-center text-sm text-muted-foreground">Switching accounts to accept this invite...</p>
+            <div className="space-y-4 text-center">
+              <p className="text-sm text-muted-foreground">Switching accounts to accept this invite...</p>
+              {signOutStuck && (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-left text-sm text-destructive">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>This is taking longer than expected — you're still signed in to another account in this browser.</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      void supabase.auth.signOut().catch((err) =>
+                        console.error("[JoinStaff] Manual sign-out retry failed:", err)
+                      );
+                    }}
+                  >
+                    Sign Out & Continue
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
 
           {hasJoinedRef.current && loggedIn && !role && (

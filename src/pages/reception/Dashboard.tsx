@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CalendarClock,
@@ -17,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function statusBadgeVariant(status: string) {
   switch (status) {
@@ -41,12 +43,37 @@ const TODAY_LABEL = new Date().toLocaleDateString("en-IN", {
 
 export default function ReceptionDashboard() {
   const navigate = useNavigate();
-  const { appointments, notifications, rescheduleRequests, cancellationRequests, profile } = useAppState();
+  const {
+    appointments,
+    notifications,
+    rescheduleRequests,
+    cancellationRequests,
+    profile,
+    staffMembers,
+    loadStaffDirectory,
+  } = useAppState();
+  const [doctorId, setDoctorId] = React.useState("all");
 
-  const todaysAppointments = appointments
+  React.useEffect(() => {
+    void loadStaffDirectory();
+  }, [loadStaffDirectory]);
+
+  // staffMembers is already scoped to the current clinic (loaded by tenant_id),
+  // so filtering to role === "doctor" here only ever surfaces this clinic's doctors.
+  const doctors = staffMembers.filter((s) => s.role === "doctor");
+  const selectedDoctor = doctors.find((d) => d.id === doctorId);
+
+  // Receptionists are clinic-level staff, not assigned to a doctor — this filter
+  // just scopes the same clinic-wide view down to one doctor's appointments,
+  // reusing the Admin Dashboard's doctor-filter pattern.
+  const scopedAppointments = selectedDoctor
+    ? appointments.filter((a) => a.doctorId === selectedDoctor.id)
+    : appointments;
+
+  const todaysAppointments = scopedAppointments
     .filter((a) => a.date === TODAY && a.status !== "cancelled")
     .sort((a, b) => a.time.localeCompare(b.time));
-  const pending = appointments.filter((a) => a.status === "pending");
+  const pending = scopedAppointments.filter((a) => a.status === "pending");
   const checkedIn = todaysAppointments.filter((a) => a.checkInStatus && a.checkInStatus !== "Not Arrived").length;
   const rescheduleCount = rescheduleRequests.filter((r) => r.status === "pending").length;
   const cancellationCount = cancellationRequests.filter((r) => r.status === "pending").length;
@@ -78,10 +105,26 @@ export default function ReceptionDashboard() {
           <h1 className="text-2xl font-bold tracking-tight">Good morning, {profile?.firstName} 👋</h1>
           <p className="text-sm text-muted-foreground">{TODAY_LABEL} · Front desk overview for {profile?.clinicName}.</p>
         </div>
-        <Button size="lg" onClick={() => navigate("/reception/checkin")}>
-          <UserCheck className="h-4 w-4" />
-          Open Check-in Board
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Doctor Filter</span>
+            <Select value={doctorId} onValueChange={setDoctorId}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Doctors</SelectItem>
+                {doctors.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button size="lg" onClick={() => navigate("/reception/checkin")}>
+            <UserCheck className="h-4 w-4" />
+            Open Check-in Board
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
