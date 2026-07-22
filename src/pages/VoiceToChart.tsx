@@ -13,8 +13,11 @@ import {
   Brain,
   NotebookPen,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
+import { callOrchestrator } from "@/lib/orchestrator";
+import type { FollowUpTrigger } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,23 +26,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-type Stage = "idle" | "recording" | "sarvam" | "transcribing" | "structuring" | "review" | "saved";
+type Stage = "idle" | "recording" | "transcribing" | "structuring" | "review" | "saved";
 
 const PIPELINE_STAGES: { id: Stage; label: string; icon: React.ElementType }[] = [
   { id: "recording", label: "Record Consultation", icon: Mic },
-  { id: "sarvam", label: "Sarvam AI", icon: AudioWaveform },
-  { id: "transcribing", label: "Speech Transcription", icon: FileText },
-  { id: "structuring", label: "LLM Structuring", icon: Brain },
+  { id: "transcribing", label: "Transcribing Audio", icon: AudioWaveform },
+  { id: "structuring", label: "AI Structuring", icon: Brain },
   { id: "review", label: "Chart Populated", icon: NotebookPen },
 ];
 
-const STAGE_ORDER: Stage[] = ["idle", "recording", "sarvam", "transcribing", "structuring", "review", "saved"];
+const STAGE_ORDER: Stage[] = ["idle", "recording", "transcribing", "structuring", "review", "saved"];
 
-const DUMMY_TRANSCRIPT =
-  "Patient presents today with mild discomfort on the lower left side, started about three days ago, worse when drinking something cold. " +
-  "On examination, no visible decay, slight gum recession near tooth nineteen, no swelling or signs of infection. " +
-  "Looks like dentin hypersensitivity from the recession. Going to recommend a desensitizing toothpaste, twice daily, " +
-  "advise switching to a soft-bristle brush, and have her come back in two weeks to check progress.";
+interface StructuredChartNote {
+  title: string;
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  followUpTrigger: FollowUpTrigger;
+}
 
 export default function VoiceToChart() {
   const { id } = useParams();
@@ -51,8 +56,17 @@ export default function VoiceToChart() {
   const [seconds, setSeconds] = React.useState(0);
   const [title, setTitle] = React.useState("");
   const [soap, setSoap] = React.useState({ subjective: "", objective: "", assessment: "", plan: "" });
+  const [transcript, setTranscript] = React.useState("");
+  const [followUpTrigger, setFollowUpTrigger] = React.useState<FollowUpTrigger | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [pipelineError, setPipelineError] = React.useState<string | null>(null);
+  const [recordError, setRecordError] = React.useState<string | null>(null);
+  const [hasRetryableRecording, setHasRetryableRecording] = React.useState(false);
+
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+  const recordedBlobRef = React.useRef<Blob | null>(null);
 
   React.useEffect(() => {
     if (stage !== "recording") return;
@@ -60,30 +74,49 @@ export default function VoiceToChart() {
     return () => clearInterval(interval);
   }, [stage]);
 
-  // Pipeline: Sarvam AI (audio upload) -> Speech Transcription -> LLM structuring -> chart populated
-  React.useEffect(() => {
-    if (stage === "sarvam") {
-      const t = setTimeout(() => setStage("transcribing"), 1200);
-      return () => clearTimeout(t);
+  // Pipeline: record -> orchestrator transcribes (Groq Whisper) -> orchestrator
+  // structures (Groq LLM) -> chart populated. Two real network calls, not
+  // faked stage timers — see orchestrator/src/voice-to-chart.
+  const processRecording = React.useCallback(async (blob: Blob) => {
+    recordedBlobRef.current = blob;
+    setHasRetryableRecording(true);
+    setPipelineError(null);
+    setStage("transcribing");
+    try {
+      // Give the upload a real extension — Groq (like the Whisper API it
+      // mirrors) identifies the audio format from the filename, not just
+      // the blob's Content-Type. The orchestrator re-derives its own
+      // extension from the mimetype regardless, but an extension-less
+      // filename is worth avoiding here too.
+      const extension = blob.type.split(";")[0].split("/")[1] || "webm";
+      const form = new FormData();
+      form.append("audio", blob, `consultation-audio.${extension}`);
+      const { transcript: t } = await callOrchestrator<{ transcript: string }>(
+        "/internal/voice-to-chart/transcribe",
+        { method: "POST", body: form }
+      );
+      setTranscript(t);
+
+      setStage("structuring");
+      const structured = await callOrchestrator<StructuredChartNote>("/internal/voice-to-chart/structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: t }),
+      });
+      setTitle(structured.title);
+      setSoap({
+        subjective: structured.subjective,
+        objective: structured.objective,
+        assessment: structured.assessment,
+        plan: structured.plan,
+      });
+      setFollowUpTrigger(structured.followUpTrigger);
+      setStage("review");
+    } catch (err) {
+      setPipelineError(err instanceof Error ? err.message : "Something went wrong processing the recording.");
+      setStage("idle");
     }
-    if (stage === "transcribing") {
-      const t = setTimeout(() => setStage("structuring"), 1400);
-      return () => clearTimeout(t);
-    }
-    if (stage === "structuring") {
-      const t = setTimeout(() => {
-        setTitle("Sensitivity Follow-up Visit");
-        setSoap({
-          subjective: "Patient reports mild discomfort on the lower left quadrant, onset ~3 days, aggravated by cold stimuli.",
-          objective: "No visible caries. Mild gum recession noted near tooth #19. No swelling or signs of active infection.",
-          assessment: "Dentin hypersensitivity secondary to localized gum recession.",
-          plan: "Recommend desensitizing toothpaste twice daily, advise soft-bristle brush, review in 2 weeks.",
-        });
-        setStage("review");
-      }, 1600);
-      return () => clearTimeout(t);
-    }
-  }, [stage]);
+  }, []);
 
   if (!patient) {
     return (
@@ -96,6 +129,42 @@ export default function VoiceToChart() {
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
+  const startRecording = async () => {
+    setRecordError(null);
+    setPipelineError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        void processRecording(blob);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setSeconds(0);
+      setStage("recording");
+    } catch (err) {
+      setRecordError(
+        err instanceof Error ? `Couldn't access the microphone: ${err.message}` : "Couldn't access the microphone."
+      );
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+  };
+
+  const retryProcessing = () => {
+    if (recordedBlobRef.current) {
+      void processRecording(recordedBlobRef.current);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setSaveError(null);
@@ -104,6 +173,8 @@ export default function VoiceToChart() {
         title: title || "Untitled Visit Note",
         recordedVia: "Voice-to-Chart AI",
         soap,
+        rawTranscript: transcript || null,
+        followUpTrigger,
       });
       setStage("saved");
     } catch (err) {
@@ -118,6 +189,11 @@ export default function VoiceToChart() {
     setSeconds(0);
     setTitle("");
     setSoap({ subjective: "", objective: "", assessment: "", plan: "" });
+    setTranscript("");
+    setFollowUpTrigger(null);
+    setPipelineError(null);
+    setHasRetryableRecording(false);
+    recordedBlobRef.current = null;
   };
 
   const currentStageIndex = STAGE_ORDER.indexOf(stage);
@@ -133,7 +209,7 @@ export default function VoiceToChart() {
           <Mic className="h-6 w-6 text-primary" /> Voice-to-Chart
         </h1>
         <p className="text-sm text-muted-foreground">
-          Record your consultation — Sarvam AI transcribes it, an LLM structures it, and it's saved straight to {patient.name}'s chart.
+          Record your consultation — speech is transcribed, an LLM structures it, and it's saved straight to {patient.name}'s chart.
         </p>
       </div>
 
@@ -169,6 +245,20 @@ export default function VoiceToChart() {
         </div>
       )}
 
+      {pipelineError && (
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <p>{pipelineError}</p>
+            {hasRetryableRecording && (
+              <Button variant="outline" size="sm" onClick={retryProcessing}>
+                Retry with the Same Recording
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {(stage === "idle" || stage === "recording") && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center gap-6 py-16">
@@ -178,8 +268,8 @@ export default function VoiceToChart() {
               )}
               <button
                 onClick={() => {
-                  if (stage === "idle") setStage("recording");
-                  else if (stage === "recording") setStage("sarvam");
+                  if (stage === "idle") void startRecording();
+                  else if (stage === "recording") stopRecording();
                 }}
                 className={cn(
                   "relative flex h-24 w-24 items-center justify-center rounded-full shadow-lg transition-colors",
@@ -191,6 +281,7 @@ export default function VoiceToChart() {
             </div>
 
             {stage === "idle" && <p className="text-sm text-muted-foreground">Tap to start recording the consultation</p>}
+            {stage === "idle" && recordError && <p className="text-sm text-destructive">{recordError}</p>}
 
             {stage === "recording" && (
               <div className="flex flex-col items-center gap-3">
@@ -208,19 +299,9 @@ export default function VoiceToChart() {
                     />
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">Listening — tap the square to stop and send to Sarvam AI</p>
+                <p className="text-xs text-muted-foreground">Listening — tap the square to stop and transcribe</p>
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
-
-      {stage === "sarvam" && (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-16">
-            <AudioWaveform className="h-6 w-6 animate-pulse text-primary" />
-            <p className="text-sm font-medium">Uploading audio to Sarvam AI...</p>
-            <p className="text-xs text-muted-foreground">Secure speech recognition tuned for clinical vocabulary</p>
           </CardContent>
         </Card>
       )}
@@ -228,8 +309,8 @@ export default function VoiceToChart() {
       {stage === "transcribing" && (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-16">
-            <FileText className="h-6 w-6 animate-pulse text-primary" />
-            <p className="text-sm font-medium">Sarvam AI is transcribing speech to text...</p>
+            <AudioWaveform className="h-6 w-6 animate-pulse text-primary" />
+            <p className="text-sm font-medium">Transcribing the recording...</p>
             <p className="text-xs text-muted-foreground">This usually takes a few seconds</p>
           </CardContent>
         </Card>
@@ -240,16 +321,16 @@ export default function VoiceToChart() {
           <Card className="border-primary/30 bg-secondary/30">
             <CardHeader className="flex-row items-center gap-2 space-y-0">
               <FileText className="h-4 w-4 text-primary" />
-              <CardTitle className="text-sm">Raw Transcript (Sarvam AI)</CardTitle>
+              <CardTitle className="text-sm">Raw Transcript</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm italic text-muted-foreground">"{DUMMY_TRANSCRIPT}"</p>
+              <p className="text-sm italic text-muted-foreground">"{transcript}"</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-12">
               <Brain className="h-6 w-6 animate-pulse text-primary" />
-              <p className="text-sm font-medium">LLM is structuring the consultation into a SOAP chart note...</p>
+              <p className="text-sm font-medium">AI is structuring the consultation into a SOAP chart note...</p>
             </CardContent>
           </Card>
         </div>
@@ -260,17 +341,30 @@ export default function VoiceToChart() {
           <Card className="border-primary/30 bg-secondary/30">
             <CardHeader className="flex-row items-center gap-2 space-y-0">
               <Sparkles className="h-4 w-4 text-primary" />
-              <CardTitle className="text-sm">Raw Transcript (Sarvam AI)</CardTitle>
+              <CardTitle className="text-sm">Raw Transcript</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm italic text-muted-foreground">"{DUMMY_TRANSCRIPT}"</p>
+              <p className="text-sm italic text-muted-foreground">"{transcript}"</p>
             </CardContent>
           </Card>
+
+          {followUpTrigger?.triggered && (
+            <Card className="border-warning/30 bg-warning/5">
+              <CardContent className="flex items-start gap-3 p-4 text-sm">
+                <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
+                <p>
+                  <span className="font-medium text-foreground">Follow-up suggested</span>
+                  {followUpTrigger.suggestedTiming ? ` in ${followUpTrigger.suggestedTiming}` : ""}
+                  {followUpTrigger.reason ? ` — ${followUpTrigger.reason}` : ""}. Saved with this note; scheduling it automatically is a later milestone.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
               <CardTitle>Patient Chart — Auto-Populated</CardTitle>
-              <CardDescription>Structured by the LLM from the transcript. Review and edit before saving.</CardDescription>
+              <CardDescription>Structured by AI from the transcript. Review and edit before saving.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">

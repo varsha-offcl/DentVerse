@@ -29,11 +29,14 @@ import {
   Pencil,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
+import NotesPanel from "@/components/notes/NotesPanel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -361,7 +364,54 @@ export function TreatmentTimelineWidget({ patient }: { patient: Patient }) {
 
 export function PatientChartWidget({ patient }: { patient: Patient }) {
   const navigate = useNavigate();
+  const { updateChartNote } = useAppState();
   const [openNote, setOpenNote] = React.useState<Patient["chartNotes"][number] | null>(null);
+  const [editing, setEditing] = React.useState(false);
+  const [editDraft, setEditDraft] = React.useState({ title: "", subjective: "", objective: "", assessment: "", plan: "" });
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+
+  const openForView = (note: Patient["chartNotes"][number]) => {
+    setOpenNote(note);
+    setEditing(false);
+    setSaveError(null);
+  };
+
+  const startEditing = () => {
+    if (!openNote) return;
+    setEditDraft({
+      title: openNote.title,
+      subjective: openNote.soap.subjective,
+      objective: openNote.soap.objective,
+      assessment: openNote.soap.assessment,
+      plan: openNote.soap.plan,
+    });
+    setSaveError(null);
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!openNote) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await updateChartNote(patient.id, openNote.id, {
+        title: editDraft.title || "Untitled Visit Note",
+        soap: {
+          subjective: editDraft.subjective,
+          objective: editDraft.objective,
+          assessment: editDraft.assessment,
+          plan: editDraft.plan,
+        },
+      });
+      setOpenNote(updated);
+      setEditing(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save these changes.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -377,7 +427,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
           {patient.chartNotes.map((c) => (
             <button
               key={c.id}
-              onClick={() => setOpenNote(c)}
+              onClick={() => openForView(c)}
               className="flex w-full items-center justify-between rounded-lg border border-border p-3 text-left hover:bg-accent"
             >
               <div>
@@ -394,10 +444,13 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
 
       <Dialog open={!!openNote} onOpenChange={(open) => !open && setOpenNote(null)}>
         <DialogContent>
-          {openNote && (
+          {openNote && !editing && (
             <>
-              <DialogHeader>
+              <DialogHeader className="flex-row items-center justify-between space-y-0 pr-8">
                 <DialogTitle>{openNote.title}</DialogTitle>
+                <Button variant="ghost" size="sm" onClick={startEditing}>
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </Button>
               </DialogHeader>
               <p className="text-xs text-muted-foreground">{openNote.date} · {openNote.recordedVia}</p>
               <div className="space-y-3 text-sm">
@@ -408,9 +461,76 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
               </div>
             </>
           )}
+          {openNote && editing && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Edit Chart Note</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Visit Title</Label>
+                  <Input value={editDraft.title} onChange={(e) => setEditDraft({ ...editDraft, title: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Subjective</Label>
+                  <Textarea
+                    value={editDraft.subjective}
+                    onChange={(e) => setEditDraft({ ...editDraft, subjective: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Objective</Label>
+                  <Textarea
+                    value={editDraft.objective}
+                    onChange={(e) => setEditDraft({ ...editDraft, objective: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Assessment</Label>
+                  <Textarea
+                    value={editDraft.assessment}
+                    onChange={(e) => setEditDraft({ ...editDraft, assessment: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Plan</Label>
+                  <Textarea value={editDraft.plan} onChange={(e) => setEditDraft({ ...editDraft, plan: e.target.value })} rows={2} />
+                </div>
+                {saveError && <p className="text-sm text-destructive">{saveError}</p>}
+                <div className="flex gap-2 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={() => setEditing(false)} disabled={saving}>
+                    Cancel
+                  </Button>
+                  <Button className="flex-1" onClick={handleSaveEdit} disabled={saving}>
+                    {saving ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/* ------------------------------ Patient Notes ------------------------------ */
+
+export function PatientNotesWidget({ patient }: { patient: Patient }) {
+  const { addPatientNote, updatePatientNote, togglePinPatientNote, deletePatientNote } = useAppState();
+
+  return (
+    <NotesPanel
+      notes={patient.notes}
+      emptyMessage="No notes yet."
+      onAdd={(content) => addPatientNote(patient.id, { content })}
+      onUpdate={(noteId, content) => updatePatientNote(patient.id, noteId, content)}
+      onTogglePin={(noteId, pinned) => togglePinPatientNote(patient.id, noteId, pinned)}
+      onDelete={(noteId) => deletePatientNote(patient.id, noteId)}
+    />
   );
 }
 

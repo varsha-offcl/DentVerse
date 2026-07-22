@@ -8,6 +8,7 @@ export type WidgetId =
   | "medicalHistory"
   | "treatmentTimeline"
   | "patientChart"
+  | "notes"
   | "clinicalImages"
   | "reports"
   | "prescription"
@@ -35,6 +36,7 @@ export const WIDGET_DEFS: WidgetDef[] = [
   { id: "medicalHistory", title: "Medical History", span: 1 },
   { id: "treatmentTimeline", title: "Treatment Timeline", span: 2 },
   { id: "patientChart", title: "Patient Chart", span: 2 },
+  { id: "notes", title: "Notes", span: 2 },
   { id: "clinicalImages", title: "Clinical Images & X-Rays", span: 2 },
   { id: "reports", title: "Reports", span: 1 },
   { id: "prescription", title: "Prescription", span: 1 },

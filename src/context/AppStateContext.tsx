@@ -7,6 +7,9 @@ import {
   type Patient,
   type AppointmentStatus,
   type ChartNote,
+  type PatientNote,
+  type DoctorNote,
+  type FollowUpTrigger,
   type Prescription,
   type TreatmentPlan,
   type TreatmentPhase,
@@ -151,10 +154,16 @@ export interface NewAppointmentInput {
   notes?: string;
 }
 
+export interface NewPatientNoteInput {
+  content: string;
+}
+
 export interface NewChartNoteInput {
   title: string;
   soap: { subjective: string; objective: string; assessment: string; plan: string };
   recordedVia: "Voice-to-Chart AI" | "Manual Entry";
+  rawTranscript?: string | null;
+  followUpTrigger?: FollowUpTrigger | null;
 }
 
 export interface NewPrescriptionInput {
@@ -242,6 +251,7 @@ function emptyPatientRelations() {
   return {
     whatsappThread: [],
     chartNotes: [],
+    notes: [],
     prescriptions: [],
     treatmentPlans: [],
     followUps: [],
@@ -328,6 +338,26 @@ function mapCancellationRow(row: any): CancellationRequest {
   };
 }
 
+function mapPatientNoteRow(row: any): PatientNote {
+  return {
+    id: row.id,
+    content: row.content,
+    pinned: row.pinned,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapDoctorNoteRow(row: any): DoctorNote {
+  return {
+    id: row.id,
+    content: row.content,
+    pinned: row.pinned,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function mapChartNoteRow(row: any): ChartNote {
   return {
     id: row.id,
@@ -335,6 +365,8 @@ function mapChartNoteRow(row: any): ChartNote {
     title: row.title,
     soap: row.soap ?? { subjective: "", objective: "", assessment: "", plan: "" },
     recordedVia: row.recorded_via,
+    rawTranscript: row.raw_transcript ?? null,
+    followUpTrigger: row.follow_up_trigger ?? null,
   };
 }
 
@@ -546,6 +578,13 @@ interface AppStateContextValue {
   staffMembers: StaffMember[];
   staffInvites: StaffInvite[];
   loadStaffDirectory: () => Promise<void>;
+  // A doctor's own personal reminders — private, not tied to a patient.
+  doctorNotes: DoctorNote[];
+  loadDoctorNotes: () => Promise<void>;
+  addDoctorNote: (content: string) => Promise<DoctorNote>;
+  updateDoctorNote: (noteId: string, content: string) => Promise<DoctorNote>;
+  togglePinDoctorNote: (noteId: string, pinned: boolean) => Promise<DoctorNote>;
+  deleteDoctorNote: (noteId: string) => Promise<void>;
   inviteStaffMember: (draft: NewStaffInviteInput) => Promise<StaffInvite>;
   revokeStaffInvite: (id: string) => Promise<void>;
   updateStaffStatus: (id: string, status: string) => Promise<void>;
@@ -563,6 +602,11 @@ interface AppStateContextValue {
   // vs. loadPatientClinicalData.
   loadPatientClinicalData: (patientId: string) => Promise<void>;
   addChartNote: (patientId: string, note: NewChartNoteInput) => Promise<ChartNote>;
+  updateChartNote: (patientId: string, noteId: string, patch: { title: string; soap: ChartNote["soap"] }) => Promise<ChartNote>;
+  addPatientNote: (patientId: string, note: NewPatientNoteInput) => Promise<PatientNote>;
+  updatePatientNote: (patientId: string, noteId: string, content: string) => Promise<PatientNote>;
+  togglePinPatientNote: (patientId: string, noteId: string, pinned: boolean) => Promise<PatientNote>;
+  deletePatientNote: (patientId: string, noteId: string) => Promise<void>;
   addPrescription: (patientId: string, rx: NewPrescriptionInput) => Promise<Prescription>;
   updatePrescription: (patientId: string, rxId: string, patch: NewPrescriptionInput) => Promise<Prescription>;
   addTreatmentPlan: (patientId: string, plan: NewTreatmentPlanInput) => Promise<TreatmentPlan>;
@@ -602,6 +646,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [broadcasts, setBroadcasts] = React.useState<BroadcastMessage[]>(seedBroadcasts);
   const [staffMembers, setStaffMembers] = React.useState<StaffMember[]>([]);
   const [staffInvites, setStaffInvites] = React.useState<StaffInvite[]>([]);
+  const [doctorNotes, setDoctorNotes] = React.useState<DoctorNote[]>([]);
   const [auditLogs, setAuditLogs] = React.useState<AuditLogEntry[]>([]);
   const [systemLogs, setSystemLogs] = React.useState<SystemLogEntry[]>([]);
   const [selectedPatientId, setSelectedPatientId] = React.useState<string | null>(null);
@@ -701,6 +746,60 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setStaffInvites((invitesRes.data ?? []).map(mapStaffInviteRow));
   }, [profile]);
 
+  // A doctor's own personal reminders — private scratchpad, loaded lazily
+  // when the doctor's Notes page opens, not tied to any patient.
+  const loadDoctorNotes = React.useCallback(async () => {
+    if (!profile) return;
+    const { data } = await supabase
+      .from("doctor_notes")
+      .select("*")
+      .eq("doctor_id", profile.id)
+      .order("pinned", { ascending: false })
+      .order("created_at", { ascending: false });
+    setDoctorNotes((data ?? []).map(mapDoctorNoteRow));
+  }, [profile]);
+
+  const sortDoctorNotes = (notes: DoctorNote[]): DoctorNote[] =>
+    [...notes].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+
+  const addDoctorNote = async (content: string): Promise<DoctorNote> => {
+    if (!profile) throw new Error("Not signed in");
+    const { data, error } = await supabase
+      .from("doctor_notes")
+      .insert({ tenant_id: profile.tenantId, doctor_id: profile.id, content })
+      .select()
+      .single();
+    if (error) throw error;
+    const note = mapDoctorNoteRow(data);
+    setDoctorNotes((prev) => sortDoctorNotes([note, ...prev]));
+    return note;
+  };
+
+  const updateDoctorNote = async (noteId: string, content: string): Promise<DoctorNote> => {
+    const { data, error } = await supabase.from("doctor_notes").update({ content }).eq("id", noteId).select().single();
+    if (error) throw error;
+    const note = mapDoctorNoteRow(data);
+    setDoctorNotes((prev) => sortDoctorNotes(prev.map((n) => (n.id === noteId ? note : n))));
+    return note;
+  };
+
+  const togglePinDoctorNote = async (noteId: string, pinned: boolean): Promise<DoctorNote> => {
+    const { data, error } = await supabase.from("doctor_notes").update({ pinned }).eq("id", noteId).select().single();
+    if (error) throw error;
+    const note = mapDoctorNoteRow(data);
+    setDoctorNotes((prev) => sortDoctorNotes(prev.map((n) => (n.id === noteId ? note : n))));
+    return note;
+  };
+
+  const deleteDoctorNote = async (noteId: string): Promise<void> => {
+    const { error } = await supabase.from("doctor_notes").delete().eq("id", noteId);
+    if (error) throw error;
+    setDoctorNotes((prev) => prev.filter((n) => n.id !== noteId));
+  };
+
   const inviteStaffMember = async (draft: NewStaffInviteInput): Promise<StaffInvite> => {
     if (!profile) throw new Error("Not signed in");
     const { data, error } = await supabase
@@ -785,8 +884,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   // reports for one patient — fetched on demand when their Patient
   // Workspace opens, not eagerly for the whole clinic at login.
   const loadPatientClinicalData = React.useCallback(async (patientId: string) => {
-    const [chartRes, rxRes, planRes, imagesRes, reportsRes] = await Promise.all([
+    const [chartRes, notesRes, rxRes, planRes, imagesRes, reportsRes] = await Promise.all([
       supabase.from("chart_notes").select("*").eq("patient_id", patientId).order("date", { ascending: false }),
+      supabase
+        .from("patient_notes")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("pinned", { ascending: false })
+        .order("created_at", { ascending: false }),
       supabase.from("prescriptions").select("*").eq("patient_id", patientId).order("date", { ascending: false }),
       supabase
         .from("treatment_plans")
@@ -817,6 +922,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           ? {
               ...p,
               chartNotes: (chartRes.data ?? []).map(mapChartNoteRow),
+              notes: (notesRes.data ?? []).map(mapPatientNoteRow),
               prescriptions: (rxRes.data ?? []).map(mapPrescriptionRow),
               treatmentPlans: (planRes.data ?? []).map(mapTreatmentPlanRow),
               images,
@@ -1061,6 +1167,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         title: draft.title,
         soap: draft.soap,
         recorded_via: draft.recordedVia,
+        raw_transcript: draft.rawTranscript ?? null,
+        follow_up_trigger: draft.followUpTrigger ?? null,
       })
       .select()
       .single();
@@ -1068,6 +1176,90 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const note = mapChartNoteRow(data);
     setPatients((prev) => prev.map((p) => (p.id === patientId ? { ...p, chartNotes: [note, ...p.chartNotes] } : p)));
     return note;
+  };
+
+  // Editing a saved note only ever changes its content (title + SOAP) —
+  // recordedVia, rawTranscript, and followUpTrigger stay as originally
+  // captured, since they describe how the note came to exist, not what it
+  // currently says.
+  const updateChartNote = async (
+    patientId: string,
+    noteId: string,
+    patch: { title: string; soap: ChartNote["soap"] }
+  ): Promise<ChartNote> => {
+    const { data, error } = await supabase
+      .from("chart_notes")
+      .update({ title: patch.title, soap: patch.soap })
+      .eq("id", noteId)
+      .select()
+      .single();
+    if (error) throw error;
+    const note = mapChartNoteRow(data);
+    setPatients((prev) =>
+      prev.map((p) => (p.id === patientId ? { ...p, chartNotes: p.chartNotes.map((n) => (n.id === noteId ? note : n)) } : p))
+    );
+    return note;
+  };
+
+  // Pinned notes first, newest first within each group — the one order
+  // the list is ever shown in, so every mutation below re-sorts to it
+  // rather than trusting whatever order local state happened to be in.
+  const sortPatientNotes = (notes: PatientNote[]): PatientNote[] =>
+    [...notes].sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+
+  const addPatientNote = async (patientId: string, draft: NewPatientNoteInput): Promise<PatientNote> => {
+    if (!profile) throw new Error("Not signed in");
+    const { data, error } = await supabase
+      .from("patient_notes")
+      .insert({
+        tenant_id: profile.tenantId,
+        patient_id: patientId,
+        doctor_id: profile.role === "doctor" ? profile.id : null,
+        content: draft.content,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const note = mapPatientNoteRow(data);
+    setPatients((prev) =>
+      prev.map((p) => (p.id === patientId ? { ...p, notes: sortPatientNotes([note, ...p.notes]) } : p))
+    );
+    return note;
+  };
+
+  const updatePatientNote = async (patientId: string, noteId: string, content: string): Promise<PatientNote> => {
+    const { data, error } = await supabase.from("patient_notes").update({ content }).eq("id", noteId).select().single();
+    if (error) throw error;
+    const note = mapPatientNoteRow(data);
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId ? { ...p, notes: sortPatientNotes(p.notes.map((n) => (n.id === noteId ? note : n))) } : p
+      )
+    );
+    return note;
+  };
+
+  const togglePinPatientNote = async (patientId: string, noteId: string, pinned: boolean): Promise<PatientNote> => {
+    const { data, error } = await supabase.from("patient_notes").update({ pinned }).eq("id", noteId).select().single();
+    if (error) throw error;
+    const note = mapPatientNoteRow(data);
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === patientId ? { ...p, notes: sortPatientNotes(p.notes.map((n) => (n.id === noteId ? note : n))) } : p
+      )
+    );
+    return note;
+  };
+
+  const deletePatientNote = async (patientId: string, noteId: string): Promise<void> => {
+    const { error } = await supabase.from("patient_notes").delete().eq("id", noteId);
+    if (error) throw error;
+    setPatients((prev) =>
+      prev.map((p) => (p.id === patientId ? { ...p, notes: p.notes.filter((n) => n.id !== noteId) } : p))
+    );
   };
 
   const addPrescription = async (patientId: string, draft: NewPrescriptionInput): Promise<Prescription> => {
@@ -1385,6 +1577,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     staffMembers,
     staffInvites,
     loadStaffDirectory,
+    doctorNotes,
+    loadDoctorNotes,
+    addDoctorNote,
+    updateDoctorNote,
+    togglePinDoctorNote,
+    deleteDoctorNote,
     inviteStaffMember,
     revokeStaffInvite,
     updateStaffStatus,
@@ -1394,6 +1592,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     updateClinicSettings,
     loadPatientClinicalData,
     addChartNote,
+    updateChartNote,
+    addPatientNote,
+    updatePatientNote,
+    togglePinPatientNote,
+    deletePatientNote,
     addPrescription,
     updatePrescription,
     addTreatmentPlan,

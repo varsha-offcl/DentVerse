@@ -19,6 +19,7 @@ import Notifications from "@/pages/Notifications";
 import Availability from "@/pages/Availability";
 import PatientWorkspace from "@/pages/PatientWorkspace";
 import VoiceToChart from "@/pages/VoiceToChart";
+import DoctorNotes from "@/pages/DoctorNotes";
 import Prescription from "@/pages/Prescription";
 import TreatmentPlan from "@/pages/TreatmentPlan";
 
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="/dashboard/patients" element={<PatientList />} />
             <Route path="/dashboard/notifications" element={<Notifications />} />
             <Route path="/dashboard/availability" element={<Availability />} />
+            <Route path="/dashboard/notes" element={<DoctorNotes />} />
             <Route path="/dashboard/broadcast" element={<BroadcastCenter />} />
             <Route path="/dashboard/communication" element={<CommunicationCenter />} />
             <Route path="/dashboard/profile" element={<ProfilePage />} />

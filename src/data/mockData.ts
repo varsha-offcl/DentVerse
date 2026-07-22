@@ -29,6 +29,12 @@ export interface WhatsAppMessage {
   time: string;
 }
 
+export interface FollowUpTrigger {
+  triggered: boolean;
+  suggestedTiming: string | null;
+  reason: string | null;
+}
+
 export interface ChartNote {
   id: string;
   date: string;
@@ -40,6 +46,8 @@ export interface ChartNote {
     plan: string;
   };
   recordedVia: "Voice-to-Chart AI" | "Manual Entry";
+  rawTranscript?: string | null;
+  followUpTrigger?: FollowUpTrigger | null;
 }
 
 export interface Prescription {
@@ -116,6 +124,24 @@ export interface Invoice {
   amountPaid?: number;
 }
 
+export interface PatientNote {
+  id: string;
+  content: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// A doctor's own personal reminders — same shape as PatientNote, but not
+// tied to a patient and not shared with anyone (see doctor_notes RLS).
+export interface DoctorNote {
+  id: string;
+  content: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Patient {
   id: string;
   // Human-friendly, per-tenant sequential display number — never used for
@@ -136,6 +162,7 @@ export interface Patient {
   memberSince: string;
   whatsappThread: WhatsAppMessage[];
   chartNotes: ChartNote[];
+  notes: PatientNote[];
   prescriptions: Prescription[];
   treatmentPlans: TreatmentPlan[];
   medicalHistory: MedicalHistory;
@@ -175,7 +202,7 @@ export const currentDoctor = {
   avatarInitials: "AR",
 };
 
-type PatientSeed = Omit<Patient, "medicalHistory" | "followUps" | "images" | "reports" | "invoices">;
+type PatientSeed = Omit<Patient, "medicalHistory" | "followUps" | "images" | "reports" | "invoices" | "notes">;
 
 const patientsSeed: PatientSeed[] = [
   {
@@ -541,6 +568,7 @@ const patientExtras: Record<
 
 export const patients: Patient[] = patientsSeed.map((p) => ({
   ...p,
+  notes: [],
   medicalHistory: patientExtras[p.id]?.medicalHistory ?? defaultMedicalHistory,
   followUps: patientExtras[p.id]?.followUps ?? [],
   images: patientExtras[p.id]?.images ?? [],
