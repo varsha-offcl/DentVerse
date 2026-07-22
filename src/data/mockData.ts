@@ -35,6 +35,11 @@ export interface FollowUpTrigger {
   reason: string | null;
 }
 
+// Doctor-set progress of a visit note's own Recommended Treatment —
+// independent of the separate Treatment Plans feature/table.
+export type ChartNoteStatus = "Pending" | "In Progress" | "Completed" | "Under Observation";
+export const CHART_NOTE_STATUSES: ChartNoteStatus[] = ["Pending", "In Progress", "Completed", "Under Observation"];
+
 export interface ChartNote {
   id: string;
   date: string;
@@ -48,6 +53,7 @@ export interface ChartNote {
   recordedVia: "Voice-to-Chart AI" | "Manual Entry";
   rawTranscript?: string | null;
   followUpTrigger?: FollowUpTrigger | null;
+  status: ChartNoteStatus;
 }
 
 export interface Prescription {
@@ -238,6 +244,7 @@ const patientsSeed: PatientSeed[] = [
           assessment: "Likely dentin hypersensitivity due to recession.",
           plan: "Prescribe desensitizing toothpaste, recommend soft-bristle brush, review in 2 weeks.",
         },
+        status: "In Progress",
       },
     ],
     prescriptions: [
@@ -324,6 +331,7 @@ const patientsSeed: PatientSeed[] = [
           assessment: "RCT #30 progressing normally, mild post-op sensitivity expected.",
           plan: "Continue obturation next visit, prescribe analgesic if needed.",
         },
+        status: "In Progress",
       },
     ],
     prescriptions: [

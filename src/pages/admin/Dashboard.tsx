@@ -7,11 +7,6 @@ import {
   CalendarClock,
   CalendarDays,
   Inbox,
-  TrendingDown,
-  Bot,
-  Star,
-  Megaphone,
-  MessageCircle,
   ArrowRight,
   Users2,
   BarChart3,
@@ -33,11 +28,6 @@ import {
 } from "recharts";
 import { useAppState } from "@/context/AppStateContext";
 import { supabase } from "@/lib/supabase";
-import { monthlyTrends, clinicStats, whatsappAnalytics, broadcastAnalytics } from "@/data/adminData";
-// clinicStats.totalPatients/activePatients/newPatientsThisMonth are NOT
-// used below — computed from real `patients` instead. noShowRate,
-// aiResolutionRate (needs M5), and patientSatisfaction (no rating system
-// exists) remain correctly mock.
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -73,8 +63,10 @@ interface DoctorAvailabilityRow {
   slots: string;
 }
 
+const TREND_MONTHS = 6;
+
 export default function AdminDashboard() {
-  const { appointments, patients, staffMembers, loadStaffDirectory, profile } = useAppState();
+  const { appointments, patients, invoices, staffMembers, loadStaffDirectory, profile } = useAppState();
   const [doctorId, setDoctorId] = React.useState("all");
   const [doctorAvailability, setDoctorAvailability] = React.useState<DoctorAvailabilityRow[]>([]);
 
@@ -105,6 +97,25 @@ export default function AdminDashboard() {
       active = false;
     };
   }, [selectedDoctor]);
+
+  // Real per-month appointments + revenue, computed from this tenant's own
+  // data — replaces the previous hardcoded mock trend that showed the same
+  // numbers to every clinic regardless of how much (or little) real
+  // activity they actually had.
+  const monthlyTrends = React.useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: TREND_MONTHS }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (TREND_MONTHS - 1 - i), 1);
+      return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: d.toLocaleDateString("en-IN", { month: "short" }) };
+    });
+    return months.map(({ key, label }) => ({
+      month: label,
+      appointments: appointments.filter((a) => a.date.startsWith(key) && (a.status === "confirmed" || a.status === "completed")).length,
+      revenue: invoices
+        .filter((inv) => inv.date.startsWith(key) && inv.status === "Paid")
+        .reduce((sum, inv) => sum + inv.amount, 0),
+    }));
+  }, [appointments, invoices]);
 
   const currentMonthPrefix = TODAY.slice(0, 7);
   const totalPatients = patients.length;
@@ -239,94 +250,11 @@ export default function AdminDashboard() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingDown className="h-4 w-4 text-destructive" /> No-show Rate
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{clinicStats.noShowRate}%</p>
-                <Progress value={clinicStats.noShowRate} className="mt-3" />
-                <p className="mt-2 text-xs text-muted-foreground">Down from 9.1% last quarter</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Bot className="h-4 w-4 text-primary" /> AI Resolution Rate
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{clinicStats.aiResolutionRate}%</p>
-                <Progress value={clinicStats.aiResolutionRate} className="mt-3" />
-                <p className="mt-2 text-xs text-muted-foreground">Conversations resolved without human escalation</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Star className="h-4 w-4 text-warning-foreground" /> Patient Satisfaction
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{clinicStats.patientSatisfaction}/5</p>
-                <Progress value={clinicStats.patientSatisfaction * 20} className="mt-3" />
-                <p className="mt-2 text-xs text-muted-foreground">Based on post-visit WhatsApp surveys</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageCircle className="h-4 w-4 text-primary" /> WhatsApp Analytics
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Messages Sent</p>
-                  <p className="text-xl font-bold">{whatsappAnalytics.messagesSent.toLocaleString("en-IN")}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Messages Received</p>
-                  <p className="text-xl font-bold">{whatsappAnalytics.messagesReceived.toLocaleString("en-IN")}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Delivery Rate</p>
-                  <p className="text-xl font-bold text-success">{whatsappAnalytics.deliveryRate}%</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Avg Response Time</p>
-                  <p className="text-xl font-bold">{whatsappAnalytics.avgResponseTimeSec}s</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Megaphone className="h-4 w-4 text-primary" /> Broadcast Analytics
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Total Broadcasts</p>
-                  <p className="text-xl font-bold">{broadcastAnalytics.totalBroadcasts}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total Recipients</p>
-                  <p className="text-xl font-bold">{broadcastAnalytics.totalRecipients.toLocaleString("en-IN")}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Avg Delivery</p>
-                  <p className="text-xl font-bold text-success">{broadcastAnalytics.avgDeliveryRate}%</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            No-show rate, AI resolution rate, patient satisfaction, WhatsApp analytics, and broadcast analytics aren't
+            available yet — they depend on appointment attendance tracking, the AI Receptionist, a rating system, and
+            the WhatsApp/broadcast milestones, none of which exist yet.
+          </p>
 
           <div>
             <h2 className="mb-3 text-lg font-semibold">Manage</h2>

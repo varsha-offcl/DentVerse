@@ -14,8 +14,13 @@ import {
   Pencil,
   Eye,
   BadgeCheck,
+  Mic,
+  Square,
+  AudioWaveform,
+  Brain,
 } from "lucide-react";
 import { useAppState, type NewTreatmentPlanInput } from "@/context/AppStateContext";
+import { callOrchestrator } from "@/lib/orchestrator";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +33,13 @@ import type { TreatmentPhase, TreatmentPlan } from "@/data/mockData";
 
 type PhaseRow = { name: string; procedure: string; cost: string; estDate: string };
 const emptyPhase: PhaseRow = { name: "", procedure: "", cost: "", estDate: "" };
+
+type DictateStage = "idle" | "listening" | "processing";
+
+interface StructuredTreatmentPlan {
+  title: string;
+  phases: { name: string; procedure: string; cost: number; estDate: string }[];
+}
 
 function phaseStatusMeta(status: TreatmentPhase["status"]) {
   switch (status) {
@@ -106,6 +118,10 @@ export default function TreatmentPlanPage() {
   const [draftSaving, setDraftSaving] = React.useState(false);
   const [draftError, setDraftError] = React.useState<string | null>(null);
   const [draftSaved, setDraftSaved] = React.useState(false);
+  const [dictateStage, setDictateStage] = React.useState<DictateStage>("idle");
+  const [dictateError, setDictateError] = React.useState<string | null>(null);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
 
   if (!patient) {
     return (
@@ -115,6 +131,68 @@ export default function TreatmentPlanPage() {
       </div>
     );
   }
+
+  // Same two-call pipeline as Patient Chart's Voice-to-Chart and
+  // Prescription dictation: shared /internal/voice-to-chart/transcribe for
+  // STT, then a domain-specific structuring call (phases instead of SOAP
+  // fields or medicines).
+  const processDictation = async (blob: Blob) => {
+    setDictateStage("processing");
+    setDictateError(null);
+    try {
+      const extension = blob.type.split(";")[0].split("/")[1] || "webm";
+      const form = new FormData();
+      form.append("audio", blob, `treatment-plan-dictation.${extension}`);
+      const { transcript } = await callOrchestrator<{ transcript: string }>(
+        "/internal/voice-to-chart/transcribe",
+        { method: "POST", body: form }
+      );
+      const structured = await callOrchestrator<StructuredTreatmentPlan>("/internal/treatment-plan/structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+      setTitle(structured.title);
+      setPhases(
+        structured.phases.length
+          ? structured.phases.map((p) => ({ name: p.name, procedure: p.procedure, cost: String(p.cost), estDate: p.estDate }))
+          : [{ ...emptyPhase }]
+      );
+    } catch (err) {
+      setDictateError(err instanceof Error ? err.message : "Could not process the dictation.");
+    } finally {
+      setDictateStage("idle");
+    }
+  };
+
+  const startDictation = async () => {
+    if (dictateStage !== "idle") return;
+    setDictateError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        void processDictation(blob);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setDictateStage("listening");
+    } catch (err) {
+      setDictateError(
+        err instanceof Error ? `Couldn't access the microphone: ${err.message}` : "Couldn't access the microphone."
+      );
+    }
+  };
+
+  const stopDictation = () => {
+    mediaRecorderRef.current?.stop();
+  };
 
   const updatePhase = (i: number, field: keyof PhaseRow, value: string) => {
     setPhases((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
@@ -201,6 +279,7 @@ export default function TreatmentPlanPage() {
     setDraftError(null);
     setDraftSaved(false);
     setEditingPlanId(null);
+    setDictateError(null);
   };
 
   const loadPlanForEdit = (plan: TreatmentPlan) => {
@@ -348,6 +427,48 @@ export default function TreatmentPlanPage() {
                   </button>
                 </div>
               )}
+              <Card className="border-primary/30 bg-secondary/30">
+                <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
+                  {dictateStage === "idle" && (
+                    <>
+                      <button
+                        onClick={() => void startDictation()}
+                        aria-label="Start voice dictation"
+                        className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105"
+                      >
+                        <Mic className="h-7 w-7" />
+                      </button>
+                      <div>
+                        <p className="text-sm font-medium">Tap the mic and dictate the treatment plan</p>
+                        <p className="text-xs text-muted-foreground">AI transcribes it and fills the phases for you — no typing needed.</p>
+                      </div>
+                      {dictateError && <p className="text-sm text-destructive">{dictateError}</p>}
+                    </>
+                  )}
+                  {dictateStage === "listening" && (
+                    <>
+                      <button onClick={stopDictation} aria-label="Stop recording" className="relative flex h-16 w-16 items-center justify-center">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive/30" />
+                        <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground">
+                          <Square className="h-6 w-6" />
+                        </div>
+                      </button>
+                      <p className="text-sm font-medium">Listening...</p>
+                      <p className="text-xs text-muted-foreground">Describe each phase, procedure, and cost — tap to stop.</p>
+                    </>
+                  )}
+                  {dictateStage === "processing" && (
+                    <>
+                      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary text-primary">
+                        <Brain className="h-7 w-7 animate-pulse" />
+                      </div>
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <AudioWaveform className="h-4 w-4 animate-pulse" /> AI is transcribing and filling the treatment plan...
+                      </p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
               <Card>
               <CardHeader>
                 <CardTitle>Plan Details</CardTitle>

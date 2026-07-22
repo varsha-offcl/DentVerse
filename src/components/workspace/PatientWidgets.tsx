@@ -14,7 +14,6 @@ import {
   Check,
   X,
   Trash2,
-  Stethoscope,
   Pill,
   Notebook,
   FileStack,
@@ -46,7 +45,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { Patient, ImageCategory, TreatmentPhase } from "@/data/mockData";
+import { CHART_NOTE_STATUSES, type Patient, type ChartNoteStatus, type ImageCategory, type TreatmentPhase } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
 function statusBadgeVariant(status: string) {
@@ -362,14 +361,66 @@ export function TreatmentTimelineWidget({ patient }: { patient: Patient }) {
 
 /* ------------------------------ Patient Chart ------------------------------ */
 
+function chartStatusBadgeVariant(status: ChartNoteStatus) {
+  switch (status) {
+    case "Completed":
+      return "success" as const;
+    case "In Progress":
+      return "warning" as const;
+    case "Under Observation":
+      return "secondary" as const;
+    default:
+      return "muted" as const;
+  }
+}
+
+function chartRowPreview(text: string, max = 70): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
+function chartStatusPillClass(status: ChartNoteStatus): string {
+  switch (status) {
+    case "Completed":
+      return "bg-success/10 text-success";
+    case "In Progress":
+      return "bg-warning/15 text-warning-foreground";
+    case "Under Observation":
+      return "bg-secondary text-secondary-foreground";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
 export function PatientChartWidget({ patient }: { patient: Patient }) {
   const navigate = useNavigate();
   const { updateChartNote } = useAppState();
   const [openNote, setOpenNote] = React.useState<Patient["chartNotes"][number] | null>(null);
   const [editing, setEditing] = React.useState(false);
-  const [editDraft, setEditDraft] = React.useState({ title: "", subjective: "", objective: "", assessment: "", plan: "" });
+  const [editDraft, setEditDraft] = React.useState({
+    title: "",
+    subjective: "",
+    objective: "",
+    assessment: "",
+    plan: "",
+    status: "Pending" as ChartNoteStatus,
+  });
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [statusUpdateError, setStatusUpdateError] = React.useState<string | null>(null);
+
+  // Inline status change from the table — only the status field changes;
+  // title/soap are resent unchanged since updateChartNote takes the full patch.
+  const handleInlineStatusChange = async (note: Patient["chartNotes"][number], status: ChartNoteStatus) => {
+    if (status === note.status) return;
+    setStatusUpdateError(null);
+    try {
+      const updated = await updateChartNote(patient.id, note.id, { title: note.title, soap: note.soap, status });
+      if (openNote?.id === note.id) setOpenNote(updated);
+    } catch (err) {
+      setStatusUpdateError(err instanceof Error ? err.message : "Could not update status.");
+    }
+  };
 
   const openForView = (note: Patient["chartNotes"][number]) => {
     setOpenNote(note);
@@ -385,6 +436,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
       objective: openNote.soap.objective,
       assessment: openNote.soap.assessment,
       plan: openNote.soap.plan,
+      status: openNote.status,
     });
     setSaveError(null);
     setEditing(true);
@@ -403,6 +455,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
           assessment: editDraft.assessment,
           plan: editDraft.plan,
         },
+        status: editDraft.status,
       });
       setOpenNote(updated);
       setEditing(false);
@@ -420,25 +473,52 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
           <Mic className="h-3.5 w-3.5" /> New Voice-to-Chart Entry
         </Button>
       </div>
+      {statusUpdateError && <p className="text-sm text-destructive">{statusUpdateError}</p>}
+
       {patient.chartNotes.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No chart notes yet.</p>
       ) : (
-        <div className="space-y-2">
-          {patient.chartNotes.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => openForView(c)}
-              className="flex w-full items-center justify-between rounded-lg border border-border p-3 text-left hover:bg-accent"
-            >
-              <div>
-                <p className="text-sm font-medium">{c.title}</p>
-                <p className="text-xs text-muted-foreground">{c.date}</p>
-              </div>
-              <Badge variant="outline" className="gap-1">
-                <Stethoscope className="h-3 w-3" /> {c.recordedVia}
-              </Badge>
-            </button>
-          ))}
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-3">Visit</th>
+                <th className="px-5 py-3">Diagnosis / Assessment</th>
+                <th className="px-5 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {patient.chartNotes.map((c) => (
+                <tr
+                  key={c.id}
+                  onClick={() => openForView(c)}
+                  className="cursor-pointer transition-colors hover:bg-accent/60"
+                >
+                  <td className="px-5 py-3 text-muted-foreground">{c.date}</td>
+                  <td className="px-5 py-3 font-medium">{c.title || chartRowPreview(c.soap.subjective)}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{chartRowPreview(c.soap.assessment)}</td>
+                  <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                    <Select value={c.status} onValueChange={(v) => void handleInlineStatusChange(c, v as ChartNoteStatus)}>
+                      <SelectTrigger
+                        className={cn(
+                          "h-7 w-auto gap-1 rounded-full border-none px-2.5 py-0.5 text-xs font-medium shadow-none hover:opacity-80 focus:ring-1 focus:ring-ring [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-60",
+                          chartStatusPillClass(c.status)
+                        )}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent onClick={(e) => e.stopPropagation()}>
+                        {CHART_NOTE_STATUSES.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -452,12 +532,15 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                   <Pencil className="h-3.5 w-3.5" /> Edit
                 </Button>
               </DialogHeader>
-              <p className="text-xs text-muted-foreground">{openNote.date} · {openNote.recordedVia}</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{openNote.date} · {openNote.recordedVia}</span>
+                <Badge variant={chartStatusBadgeVariant(openNote.status)}>{openNote.status}</Badge>
+              </div>
               <div className="space-y-3 text-sm">
-                <div><p className="font-medium">Subjective</p><p className="text-muted-foreground">{openNote.soap.subjective}</p></div>
-                <div><p className="font-medium">Objective</p><p className="text-muted-foreground">{openNote.soap.objective}</p></div>
-                <div><p className="font-medium">Assessment</p><p className="text-muted-foreground">{openNote.soap.assessment}</p></div>
-                <div><p className="font-medium">Plan</p><p className="text-muted-foreground">{openNote.soap.plan}</p></div>
+                <div><p className="font-medium">Patient Concern</p><p className="text-muted-foreground">{openNote.soap.subjective}</p></div>
+                <div><p className="font-medium">Clinical Findings</p><p className="text-muted-foreground">{openNote.soap.objective}</p></div>
+                <div><p className="font-medium">Diagnosis / Assessment</p><p className="text-muted-foreground">{openNote.soap.assessment}</p></div>
+                <div><p className="font-medium">Recommended Treatment</p><p className="text-muted-foreground">{openNote.soap.plan}</p></div>
               </div>
             </>
           )}
@@ -472,7 +555,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                   <Input value={editDraft.title} onChange={(e) => setEditDraft({ ...editDraft, title: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Subjective</Label>
+                  <Label>Patient Concern</Label>
                   <Textarea
                     value={editDraft.subjective}
                     onChange={(e) => setEditDraft({ ...editDraft, subjective: e.target.value })}
@@ -480,7 +563,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Objective</Label>
+                  <Label>Clinical Findings</Label>
                   <Textarea
                     value={editDraft.objective}
                     onChange={(e) => setEditDraft({ ...editDraft, objective: e.target.value })}
@@ -488,7 +571,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Assessment</Label>
+                  <Label>Diagnosis / Assessment</Label>
                   <Textarea
                     value={editDraft.assessment}
                     onChange={(e) => setEditDraft({ ...editDraft, assessment: e.target.value })}
@@ -496,8 +579,24 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Plan</Label>
+                  <Label>Recommended Treatment</Label>
                   <Textarea value={editDraft.plan} onChange={(e) => setEditDraft({ ...editDraft, plan: e.target.value })} rows={2} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <Select
+                    value={editDraft.status}
+                    onValueChange={(v) => setEditDraft({ ...editDraft, status: v as ChartNoteStatus })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CHART_NOTE_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 {saveError && <p className="text-sm text-destructive">{saveError}</p>}
                 <div className="flex gap-2 pt-1">

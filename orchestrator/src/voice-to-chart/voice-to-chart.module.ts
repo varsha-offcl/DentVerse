@@ -10,8 +10,13 @@ import { GroqLlmProvider } from "./groq-llm.provider";
 // To switch STT to Sarvam later: write SarvamSttProvider implementing
 // SttProvider, add it to the factory below, and set STT_PROVIDER=sarvam.
 // Same shape for the structuring LLM via LLM_PROVIDER.
+// Exports STT_PROVIDER/LLM_PROVIDER so Prescription/Treatment Plan dictation
+// (see ../prescription and ../treatment-plan) can reuse the exact same
+// bound providers instead of re-registering their own — one Groq client
+// config, one place to swap providers, for every AI-structuring feature.
 @Module({
   controllers: [VoiceToChartController],
+  exports: [STT_PROVIDER, LLM_PROVIDER],
   providers: [
     GroqSttProvider,
     GroqLlmProvider,

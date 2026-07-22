@@ -7,6 +7,7 @@ import {
   type Patient,
   type AppointmentStatus,
   type ChartNote,
+  type ChartNoteStatus,
   type PatientNote,
   type DoctorNote,
   type FollowUpTrigger,
@@ -164,6 +165,7 @@ export interface NewChartNoteInput {
   recordedVia: "Voice-to-Chart AI" | "Manual Entry";
   rawTranscript?: string | null;
   followUpTrigger?: FollowUpTrigger | null;
+  status?: ChartNoteStatus;
 }
 
 export interface NewPrescriptionInput {
@@ -367,6 +369,7 @@ function mapChartNoteRow(row: any): ChartNote {
     recordedVia: row.recorded_via,
     rawTranscript: row.raw_transcript ?? null,
     followUpTrigger: row.follow_up_trigger ?? null,
+    status: row.status ?? "Pending",
   };
 }
 
@@ -602,7 +605,11 @@ interface AppStateContextValue {
   // vs. loadPatientClinicalData.
   loadPatientClinicalData: (patientId: string) => Promise<void>;
   addChartNote: (patientId: string, note: NewChartNoteInput) => Promise<ChartNote>;
-  updateChartNote: (patientId: string, noteId: string, patch: { title: string; soap: ChartNote["soap"] }) => Promise<ChartNote>;
+  updateChartNote: (
+    patientId: string,
+    noteId: string,
+    patch: { title: string; soap: ChartNote["soap"]; status: ChartNoteStatus }
+  ) => Promise<ChartNote>;
   addPatientNote: (patientId: string, note: NewPatientNoteInput) => Promise<PatientNote>;
   updatePatientNote: (patientId: string, noteId: string, content: string) => Promise<PatientNote>;
   togglePinPatientNote: (patientId: string, noteId: string, pinned: boolean) => Promise<PatientNote>;
@@ -684,7 +691,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const loadPracticeData = React.useCallback(async (tenantId: string) => {
+  // `isStale` guards against a real race: sign out of one account and into
+  // another quickly (e.g. testing a second clinic's admin signup in the
+  // same browser) and the FIRST account's still-in-flight fetch can resolve
+  // after the second account's tenantId has already switched, overwriting
+  // the new tenant's correct (often empty) data with the old tenant's rows.
+  // Checked right after the awaited Promise.all, before any setState.
+  const loadPracticeData = React.useCallback(async (tenantId: string, isStale?: () => boolean) => {
     const [patientsRes, appointmentsRes, rescheduleRes, cancellationRes, invoicesRes, notificationsRes] = await Promise.all([
       supabase.from("patients").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       supabase
@@ -713,6 +726,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false }),
     ]);
+
+    if (isStale?.()) return;
 
     const mappedAppointments = (appointmentsRes.data ?? []).map(mapAppointmentRow);
     const mappedInvoices = (invoicesRes.data ?? []).map(mapInvoiceRow);
@@ -943,12 +958,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setInvoices([]);
       return;
     }
-    void loadPracticeData(tenantId);
+    // Cancelled in this effect's cleanup — if tenantId changes again (a
+    // sign-out/sign-in, or switching accounts) before this fetch resolves,
+    // its results are discarded instead of overwriting the new tenant's data.
+    let cancelled = false;
+    void loadPracticeData(tenantId, () => cancelled);
     // Depend on tenantId (a stable primitive), not the profile object —
     // `onAuthStateChange` fires a fresh profile object on every token
     // refresh / tab-focus revalidation even when nothing changed, and
     // re-running loadPracticeData would wipe out clinical data that
     // loadPatientClinicalData lazily merged onto `patients` in the meantime.
+    return () => {
+      cancelled = true;
+    };
   }, [tenantId, loadPracticeData]);
 
   const setTheme = (next: Theme) => {
@@ -1169,6 +1191,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         recorded_via: draft.recordedVia,
         raw_transcript: draft.rawTranscript ?? null,
         follow_up_trigger: draft.followUpTrigger ?? null,
+        status: draft.status ?? "Pending",
       })
       .select()
       .single();
@@ -1178,18 +1201,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return note;
   };
 
-  // Editing a saved note only ever changes its content (title + SOAP) —
-  // recordedVia, rawTranscript, and followUpTrigger stay as originally
-  // captured, since they describe how the note came to exist, not what it
-  // currently says.
+  // Editing a saved note changes its content (title + SOAP) and/or its
+  // status — recordedVia, rawTranscript, and followUpTrigger stay as
+  // originally captured, since they describe how the note came to exist,
+  // not what it currently says.
   const updateChartNote = async (
     patientId: string,
     noteId: string,
-    patch: { title: string; soap: ChartNote["soap"] }
+    patch: { title: string; soap: ChartNote["soap"]; status: ChartNoteStatus }
   ): Promise<ChartNote> => {
     const { data, error } = await supabase
       .from("chart_notes")
-      .update({ title: patch.title, soap: patch.soap })
+      .update({ title: patch.title, soap: patch.soap, status: patch.status })
       .eq("id", noteId)
       .select()
       .single();

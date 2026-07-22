@@ -16,12 +16,14 @@ import {
   Loader2,
   Stethoscope,
   Mic,
+  Square,
   AudioWaveform,
   Brain,
   Download,
 } from "lucide-react";
 import { useAppState, type NewPrescriptionInput } from "@/context/AppStateContext";
 import { supabase } from "@/lib/supabase";
+import { callOrchestrator } from "@/lib/orchestrator";
 import { buildPrescriptionPdf, sha256Hex } from "@/lib/prescriptionPdf";
 import type { Prescription as PrescriptionRecord } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -32,7 +34,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 
 type MedRow = { name: string; dosage: string; frequency: string; duration: string; instructions: string };
 
@@ -43,12 +44,12 @@ const AI_SUGGESTIONS: MedRow[] = [
   { name: "Ibuprofen 400mg", dosage: "1 tablet", frequency: "Every 8 hours as needed", duration: "3 days", instructions: "Take after food." },
 ];
 
-const DICTATED_RX: MedRow[] = [
-  { name: "Amoxicillin 500mg", dosage: "1 capsule", frequency: "Every 8 hours", duration: "5 days", instructions: "Complete full course, take after food." },
-  { name: "Chlorhexidine Mouthwash 0.2%", dosage: "10ml rinse", frequency: "Twice daily", duration: "1 week", instructions: "Do not eat or drink for 30 minutes after use." },
-];
-
 type DictateStage = "idle" | "listening" | "processing";
+
+interface StructuredPrescription {
+  medicines: MedRow[];
+  notes: string;
+}
 
 function fakeSignatureHash(seed: string) {
   let h = 0;
@@ -147,6 +148,9 @@ export default function Prescription() {
   const [sent, setSent] = React.useState(false);
   const [historyPreview, setHistoryPreview] = React.useState<PrescriptionRecord | null>(null);
   const [dictateStage, setDictateStage] = React.useState<DictateStage>("idle");
+  const [dictateError, setDictateError] = React.useState<string | null>(null);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
   const [editingRxId, setEditingRxId] = React.useState<string | null>(null);
   const [draftSaving, setDraftSaving] = React.useState(false);
@@ -171,17 +175,61 @@ export default function Prescription() {
     );
   };
 
-  const startDictation = () => {
+  // Same two-call pipeline as Patient Chart's Voice-to-Chart: shared
+  // /internal/voice-to-chart/transcribe for STT, then a domain-specific
+  // structuring call (medicines instead of SOAP fields).
+  const processDictation = async (blob: Blob) => {
+    setDictateStage("processing");
+    setDictateError(null);
+    try {
+      const extension = blob.type.split(";")[0].split("/")[1] || "webm";
+      const form = new FormData();
+      form.append("audio", blob, `prescription-dictation.${extension}`);
+      const { transcript } = await callOrchestrator<{ transcript: string }>(
+        "/internal/voice-to-chart/transcribe",
+        { method: "POST", body: form }
+      );
+      const structured = await callOrchestrator<StructuredPrescription>("/internal/prescription/structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+      setRows(structured.medicines.length ? structured.medicines : [{ ...emptyRow }]);
+      setNotes(structured.notes);
+    } catch (err) {
+      setDictateError(err instanceof Error ? err.message : "Could not process the dictation.");
+    } finally {
+      setDictateStage("idle");
+    }
+  };
+
+  const startDictation = async () => {
     if (dictateStage !== "idle") return;
-    setDictateStage("listening");
-    setTimeout(() => {
-      setDictateStage("processing");
-      setTimeout(() => {
-        setRows(DICTATED_RX.map((r) => ({ ...r })));
-        setNotes("Filled from voice dictation via Sarvam AI — review before sending.");
-        setDictateStage("idle");
-      }, 1300);
-    }, 1800);
+    setDictateError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        void processDictation(blob);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setDictateStage("listening");
+    } catch (err) {
+      setDictateError(
+        err instanceof Error ? `Couldn't access the microphone: ${err.message}` : "Couldn't access the microphone."
+      );
+    }
+  };
+
+  const stopDictation = () => {
+    mediaRecorderRef.current?.stop();
   };
 
   const updateRow = (i: number, field: keyof MedRow, value: string) => {
@@ -399,28 +447,29 @@ export default function Prescription() {
                   {dictateStage === "idle" && (
                     <>
                       <button
-                        onClick={startDictation}
-                        aria-label="Start voice dictation with Sarvam AI"
+                        onClick={() => void startDictation()}
+                        aria-label="Start voice dictation"
                         className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105"
                       >
                         <Mic className="h-7 w-7" />
                       </button>
                       <div>
                         <p className="text-sm font-medium">Tap the mic and dictate the prescription</p>
-                        <p className="text-xs text-muted-foreground">Sarvam AI transcribes it and fills the form for you — no typing needed.</p>
+                        <p className="text-xs text-muted-foreground">AI transcribes it and fills the form for you — no typing needed.</p>
                       </div>
+                      {dictateError && <p className="text-sm text-destructive">{dictateError}</p>}
                     </>
                   )}
                   {dictateStage === "listening" && (
                     <>
-                      <div className="relative flex h-16 w-16 items-center justify-center">
+                      <button onClick={stopDictation} aria-label="Stop recording" className="relative flex h-16 w-16 items-center justify-center">
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive/30" />
                         <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground">
-                          <Mic className="h-7 w-7" />
+                          <Square className="h-6 w-6" />
                         </div>
-                      </div>
+                      </button>
                       <p className="text-sm font-medium">Listening...</p>
-                      <p className="text-xs text-muted-foreground">Describe the medicines, dosage, and instructions.</p>
+                      <p className="text-xs text-muted-foreground">Describe the medicines, dosage, and instructions — tap to stop.</p>
                     </>
                   )}
                   {dictateStage === "processing" && (
@@ -429,7 +478,7 @@ export default function Prescription() {
                         <Brain className="h-7 w-7 animate-pulse" />
                       </div>
                       <p className="flex items-center gap-1.5 text-sm font-medium">
-                        <AudioWaveform className="h-4 w-4 animate-pulse" /> Sarvam AI is transcribing and filling the prescription...
+                        <AudioWaveform className="h-4 w-4 animate-pulse" /> AI is transcribing and filling the prescription...
                       </p>
                     </>
                   )}

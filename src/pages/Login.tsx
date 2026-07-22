@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, Navigate } from "react-router-dom";
-import { Stethoscope, Mail, Lock, User, ArrowRight, ShieldCheck, Building2, AlertTriangle } from "lucide-react";
+import { Stethoscope, Mail, Lock, User, ArrowRight, ShieldCheck, Building2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,28 @@ export default function Login() {
   const [error, setError] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
   const [resending, setResending] = React.useState(false);
+  // Distinguishes "we just created this account via the signup form" (sign
+  // it back out and show a success screen once the clinic/profile setup
+  // resolves) from "an ordinary sign-in that should redirect normally."
+  // Mirrors the same deliberate choice JoinStaff.tsx makes: creating an
+  // account and signing in are two separate, explicit steps, not one
+  // implicit one.
+  const hasSignedUpRef = React.useRef(false);
+  const [signupComplete, setSignupComplete] = React.useState(false);
+
+  React.useEffect(() => {
+    if (hasSignedUpRef.current && loggedIn && role && !signupComplete) {
+      setSignupComplete(true);
+      void logout();
+    }
+  }, [loggedIn, role, signupComplete, logout]);
+
+  const backToSignIn = () => {
+    setMode("signin");
+    setEmail(signupEmail);
+    hasSignedUpRef.current = false;
+    setSignupComplete(false);
+  };
 
   // Auth state is still resolving (session restore + profile fetch) — render
   // nothing rather than the form, so an already-authenticated visitor never
@@ -33,9 +55,15 @@ export default function Login() {
     return null;
   }
 
-  // Already signed in — redirect declaratively (no extra effect/render tick,
-  // so this never paints the form first).
-  if (loggedIn && role) {
+  // Suppressed for the entire post-signup window — from the moment the
+  // profile resolves until logout() actually finishes — not just until
+  // signupComplete flips true. Tying this to signupComplete alone leaves a
+  // gap: the effect below sets signupComplete and calls logout() in the same
+  // tick, but logout() is async, so loggedIn can still read true for a
+  // moment after signupComplete is already true. Suppressing on
+  // hasSignedUpRef alone (reset only when the user leaves the success
+  // screen) covers that whole window.
+  if (loggedIn && role && !hasSignedUpRef.current) {
     return <Navigate to={ROLE_HOME[role]} replace />;
   }
 
@@ -58,6 +86,37 @@ export default function Login() {
             <Button onClick={() => window.location.reload()}>Try Again</Button>
             <Button variant="outline" onClick={logout}>
               Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Fresh signup's clinic/profile setup just resolved — sign-out is in
+  // flight (see the effect above). Success screen takes over once it lands.
+  if (hasSignedUpRef.current && !signupComplete) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
+        <p className="text-sm text-muted-foreground">Finishing setup...</p>
+      </div>
+    );
+  }
+
+  if (signupComplete) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
+        <Card className="w-full max-w-md border-border shadow-lg">
+          <CardHeader className="space-y-1 text-center">
+            <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-success/10 text-success">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <CardTitle className="text-2xl">Clinic Created</CardTitle>
+            <CardDescription>Sign in with your new email and password to get started.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" size="lg" onClick={backToSignIn}>
+              Go to Sign In
             </Button>
           </CardContent>
         </Card>
@@ -98,6 +157,7 @@ export default function Login() {
     setLoading(true);
 
     stashPendingClinicSetup({ clinicName: clinic, adminName: name });
+    hasSignedUpRef.current = true;
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: signupEmail,
       password: signupPassword,
@@ -106,18 +166,21 @@ export default function Login() {
 
     if (signUpError) {
       clearPendingClinicSetup();
+      hasSignedUpRef.current = false;
       setError(signUpError.message);
       return;
     }
 
     if (!data.session) {
+      hasSignedUpRef.current = false;
       setInfo("Account created — check your email to confirm it, then sign in to finish setting up your clinic.");
       return;
     }
     // A session exists immediately (email confirmation disabled on this
     // project) — AppStateContext will pick up the pending clinic setup,
-    // create the clinic + admin profile, and this component re-renders
-    // into the redirect branch above.
+    // create the clinic + admin profile, and the effect above signs it back
+    // out and shows the success screen instead of redirecting into the
+    // dashboard directly.
   };
 
   return (

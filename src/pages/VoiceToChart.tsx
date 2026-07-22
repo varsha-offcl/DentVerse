@@ -17,13 +17,13 @@ import {
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
 import { callOrchestrator } from "@/lib/orchestrator";
-import type { FollowUpTrigger } from "@/data/mockData";
+import { CHART_NOTE_STATUSES, type FollowUpTrigger, type ChartNoteStatus } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 type Stage = "idle" | "recording" | "transcribing" | "structuring" | "review" | "saved";
@@ -56,6 +56,7 @@ export default function VoiceToChart() {
   const [seconds, setSeconds] = React.useState(0);
   const [title, setTitle] = React.useState("");
   const [soap, setSoap] = React.useState({ subjective: "", objective: "", assessment: "", plan: "" });
+  const [status, setStatus] = React.useState<ChartNoteStatus>("Pending");
   const [transcript, setTranscript] = React.useState("");
   const [followUpTrigger, setFollowUpTrigger] = React.useState<FollowUpTrigger | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -175,6 +176,7 @@ export default function VoiceToChart() {
         soap,
         rawTranscript: transcript || null,
         followUpTrigger,
+        status,
       });
       setStage("saved");
     } catch (err) {
@@ -189,6 +191,7 @@ export default function VoiceToChart() {
     setSeconds(0);
     setTitle("");
     setSoap({ subjective: "", objective: "", assessment: "", plan: "" });
+    setStatus("Pending");
     setTranscript("");
     setFollowUpTrigger(null);
     setPipelineError(null);
@@ -330,7 +333,7 @@ export default function VoiceToChart() {
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-12">
               <Brain className="h-6 w-6 animate-pulse text-primary" />
-              <p className="text-sm font-medium">AI is structuring the consultation into a SOAP chart note...</p>
+              <p className="text-sm font-medium">AI is structuring the consultation into a chart note...</p>
             </CardContent>
           </Card>
         </div>
@@ -372,28 +375,33 @@ export default function VoiceToChart() {
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <Badge variant="secondary" className="text-[10px]">S</Badge> Subjective
-                </Label>
+                <Label>Patient Concern</Label>
                 <Textarea value={soap.subjective} onChange={(e) => setSoap({ ...soap, subjective: e.target.value })} rows={2} />
               </div>
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <Badge variant="secondary" className="text-[10px]">O</Badge> Objective
-                </Label>
+                <Label>Clinical Findings</Label>
                 <Textarea value={soap.objective} onChange={(e) => setSoap({ ...soap, objective: e.target.value })} rows={2} />
               </div>
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <Badge variant="secondary" className="text-[10px]">A</Badge> Assessment
-                </Label>
+                <Label>Diagnosis / Assessment</Label>
                 <Textarea value={soap.assessment} onChange={(e) => setSoap({ ...soap, assessment: e.target.value })} rows={2} />
               </div>
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <Badge variant="secondary" className="text-[10px]">P</Badge> Plan
-                </Label>
+                <Label>Recommended Treatment</Label>
                 <Textarea value={soap.plan} onChange={(e) => setSoap({ ...soap, plan: e.target.value })} rows={2} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={status} onValueChange={(v) => setStatus(v as ChartNoteStatus)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CHART_NOTE_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               {saveError && <p className="text-sm text-destructive">{saveError}</p>}
               <div className="flex gap-3 pt-2">
