@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { callOrchestrator } from "@/lib/orchestrator";
+import { callEdgeFunction } from "@/lib/orchestrator";
 
 export interface NoteLike {
   id: string;
@@ -81,7 +81,7 @@ export default function NotesPanel<T extends NoteLike>({
     setComposerOpen(true);
   };
 
-  // Voice notes reuse the same orchestrator transcription call Voice-to-Chart
+  // Voice notes reuse the same transcription Edge Function Voice-to-Chart
   // uses — just the STT step, no SOAP structuring — and drop the transcript
   // into the composer for review/edit before saving.
   const transcribeAndFill = async (blob: Blob) => {
@@ -91,7 +91,7 @@ export default function NotesPanel<T extends NoteLike>({
       const extension = blob.type.split(";")[0].split("/")[1] || "webm";
       const form = new FormData();
       form.append("audio", blob, `note.${extension}`);
-      const { transcript } = await callOrchestrator<{ transcript: string }>("/internal/voice-to-chart/transcribe", {
+      const { transcript } = await callEdgeFunction<{ transcript: string }>("voice-to-chart-transcribe", {
         method: "POST",
         body: form,
       });

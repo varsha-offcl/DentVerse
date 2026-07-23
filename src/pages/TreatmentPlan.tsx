@@ -20,7 +20,7 @@ import {
   Brain,
 } from "lucide-react";
 import { useAppState, type NewTreatmentPlanInput } from "@/context/AppStateContext";
-import { callOrchestrator } from "@/lib/orchestrator";
+import { callEdgeFunction } from "@/lib/orchestrator";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,9 +133,9 @@ export default function TreatmentPlanPage() {
   }
 
   // Same two-call pipeline as Patient Chart's Voice-to-Chart and
-  // Prescription dictation: shared /internal/voice-to-chart/transcribe for
-  // STT, then a domain-specific structuring call (phases instead of SOAP
-  // fields or medicines).
+  // Prescription dictation: shared voice-to-chart-transcribe Edge Function
+  // for STT, then the treatment-plan-structure Edge Function (phases
+  // instead of SOAP fields or medicines).
   const processDictation = async (blob: Blob) => {
     setDictateStage("processing");
     setDictateError(null);
@@ -143,11 +143,11 @@ export default function TreatmentPlanPage() {
       const extension = blob.type.split(";")[0].split("/")[1] || "webm";
       const form = new FormData();
       form.append("audio", blob, `treatment-plan-dictation.${extension}`);
-      const { transcript } = await callOrchestrator<{ transcript: string }>(
-        "/internal/voice-to-chart/transcribe",
+      const { transcript } = await callEdgeFunction<{ transcript: string }>(
+        "voice-to-chart-transcribe",
         { method: "POST", body: form }
       );
-      const structured = await callOrchestrator<StructuredTreatmentPlan>("/internal/treatment-plan/structure", {
+      const structured = await callEdgeFunction<StructuredTreatmentPlan>("treatment-plan-structure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript }),

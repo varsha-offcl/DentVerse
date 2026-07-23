@@ -14,7 +14,16 @@
       "Bash(timeout 90 node verify7.mjs)",
       "Bash(git -C /c/work/Dentverse show --stat 0d34250)",
       "Skill(claude-in-chrome)",
-      "Bash(echo \"BUILD EXIT=$?\")"
+      "Bash(echo \"BUILD EXIT=$?\")",
+      "Bash(npm view *)",
+      "Bash(npx *)",
+      "Bash(awk -F= '/^GROQ_API_KEY=/ || /^GROQ_STT_MODEL=/' orchestrator/.env)",
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest secrets set --env-file /tmp/edge-fn-secrets.env)",
+      "Bash(curl -s -o /tmp/resp1.json -w \"HTTP %{http_code}\\\\n\" -X POST \"https://excvhqrtamzoiyksjuko.supabase.co/functions/v1/voice-to-chart-transcribe\")",
+      "Bash(curl -s -o /tmp/resp2.json -w \"HTTP %{http_code}\\\\n\" -X POST \"https://excvhqrtamzoiyksjuko.supabase.co/functions/v1/voice-to-chart-transcribe\" -H \"Authorization: Bearer not-a-real-token\")",
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy voice-to-chart-structure)",
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy prescription-structure)",
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy treatment-plan-structure)"
     ]
   }
 }

@@ -16,7 +16,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useAppState } from "@/context/AppStateContext";
-import { callOrchestrator } from "@/lib/orchestrator";
+import { callEdgeFunction } from "@/lib/orchestrator";
 import { CHART_NOTE_STATUSES, type FollowUpTrigger, type ChartNoteStatus } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -75,9 +75,11 @@ export default function VoiceToChart() {
     return () => clearInterval(interval);
   }, [stage]);
 
-  // Pipeline: record -> orchestrator transcribes (Groq Whisper) -> orchestrator
-  // structures (Groq LLM) -> chart populated. Two real network calls, not
-  // faked stage timers — see orchestrator/src/voice-to-chart.
+  // Pipeline: record -> Edge Function transcribes (Groq Whisper) -> Edge
+  // Function structures (Groq LLM) -> chart populated. Two real network
+  // calls, not faked stage timers — see
+  // supabase/functions/voice-to-chart-transcribe and
+  // supabase/functions/voice-to-chart-structure.
   const processRecording = React.useCallback(async (blob: Blob) => {
     recordedBlobRef.current = blob;
     setHasRetryableRecording(true);
@@ -92,14 +94,14 @@ export default function VoiceToChart() {
       const extension = blob.type.split(";")[0].split("/")[1] || "webm";
       const form = new FormData();
       form.append("audio", blob, `consultation-audio.${extension}`);
-      const { transcript: t } = await callOrchestrator<{ transcript: string }>(
-        "/internal/voice-to-chart/transcribe",
+      const { transcript: t } = await callEdgeFunction<{ transcript: string }>(
+        "voice-to-chart-transcribe",
         { method: "POST", body: form }
       );
       setTranscript(t);
 
       setStage("structuring");
-      const structured = await callOrchestrator<StructuredChartNote>("/internal/voice-to-chart/structure", {
+      const structured = await callEdgeFunction<StructuredChartNote>("voice-to-chart-structure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript: t }),

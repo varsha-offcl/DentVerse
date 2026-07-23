@@ -1,11 +1,12 @@
 import { Module } from "@nestjs/common";
 import { AppController } from "./app.controller";
-import { VoiceToChartModule } from "./voice-to-chart/voice-to-chart.module";
-import { PrescriptionModule } from "./prescription/prescription.module";
-import { TreatmentPlanModule } from "./treatment-plan/treatment-plan.module";
 
+// All AI endpoints (Voice-to-Chart, Notes, Prescription, Treatment Plan)
+// have migrated to Supabase Edge Functions — see supabase/functions/. This
+// leaves only the health check; see DentVerseDocs for whether the
+// orchestrator is still needed for future non-AI work.
 @Module({
-  imports: [VoiceToChartModule, PrescriptionModule, TreatmentPlanModule],
+  imports: [],
   controllers: [AppController],
   providers: [],
 })

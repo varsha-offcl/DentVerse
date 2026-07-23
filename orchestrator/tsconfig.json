@@ -17,7 +17,7 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
     "strictBindCallApply": false,
-    "types": ["node", "express", "multer"]
+    "types": ["node"]
   },
   "include": ["src"]
 }
