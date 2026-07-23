@@ -46,7 +46,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CHART_NOTE_STATUSES, type Patient, type ChartNoteStatus, type ImageCategory, type TreatmentPhase } from "@/data/mockData";
-import { cn } from "@/lib/utils";
+import { cn, formatDateDMY } from "@/lib/utils";
 
 function statusBadgeVariant(status: string) {
   switch (status) {
@@ -394,7 +394,7 @@ function chartStatusPillClass(status: ChartNoteStatus): string {
 
 export function PatientChartWidget({ patient }: { patient: Patient }) {
   const navigate = useNavigate();
-  const { updateChartNote } = useAppState();
+  const { updateChartNote, deleteChartNote } = useAppState();
   const [openNote, setOpenNote] = React.useState<Patient["chartNotes"][number] | null>(null);
   const [editing, setEditing] = React.useState(false);
   const [editDraft, setEditDraft] = React.useState({
@@ -408,6 +408,8 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [statusUpdateError, setStatusUpdateError] = React.useState<string | null>(null);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   // Inline status change from the table — only the status field changes;
   // title/soap are resent unchanged since updateChartNote takes the full patch.
@@ -419,6 +421,19 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
       if (openNote?.id === note.id) setOpenNote(updated);
     } catch (err) {
       setStatusUpdateError(err instanceof Error ? err.message : "Could not update status.");
+    }
+  };
+
+  const handleDelete = async (noteId: string) => {
+    setDeletingId(noteId);
+    setDeleteError(null);
+    try {
+      await deleteChartNote(patient.id, noteId);
+      if (openNote?.id === noteId) setOpenNote(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete this chart note.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -474,6 +489,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
         </Button>
       </div>
       {statusUpdateError && <p className="text-sm text-destructive">{statusUpdateError}</p>}
+      {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
 
       {patient.chartNotes.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No chart notes yet.</p>
@@ -486,6 +502,7 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                 <th className="px-5 py-3">Visit</th>
                 <th className="px-5 py-3">Diagnosis / Assessment</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -515,6 +532,16 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
                       </SelectContent>
                     </Select>
                   </td>
+                  <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => void handleDelete(c.id)}
+                      disabled={deletingId === c.id}
+                      className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                      title="Delete chart note"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -528,9 +555,20 @@ export function PatientChartWidget({ patient }: { patient: Patient }) {
             <>
               <DialogHeader className="flex-row items-center justify-between space-y-0 pr-8">
                 <DialogTitle>{openNote.title}</DialogTitle>
-                <Button variant="ghost" size="sm" onClick={startEditing}>
-                  <Pencil className="h-3.5 w-3.5" /> Edit
-                </Button>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={startEditing}>
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    disabled={deletingId === openNote.id}
+                    onClick={() => void handleDelete(openNote.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </Button>
+                </div>
               </DialogHeader>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{openNote.date} · {openNote.recordedVia}</span>
@@ -819,14 +857,14 @@ export function ReportsWidget({ patient }: { patient: Patient }) {
 
 export function PrescriptionWidget({ patient }: { patient: Patient }) {
   const navigate = useNavigate();
-  const latest = patient.prescriptions[0];
+  const latest = patient.prescriptions.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
 
   return (
     <div className="space-y-3">
       {latest ? (
         <div className="rounded-lg border border-border p-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">{latest.date}</p>
+            <p className="text-sm font-semibold">{formatDateDMY(latest.date)}</p>
             <Badge variant={latest.status === "Sent to Patient" ? "success" : "muted"}>{latest.status}</Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{latest.medicines.length} medicine{latest.medicines.length !== 1 ? "s" : ""} prescribed</p>
@@ -852,7 +890,7 @@ function planProgress(phases: TreatmentPhase[]) {
 
 export function TreatmentPlanWidget({ patient }: { patient: Patient }) {
   const navigate = useNavigate();
-  const active = patient.treatmentPlans[0];
+  const active = patient.treatmentPlans.slice().sort((a, b) => b.createdOn.localeCompare(a.createdOn))[0];
 
   return (
     <div className="space-y-3">
@@ -932,7 +970,7 @@ export function InvoiceWidget({ patient }: { patient: Patient }) {
               <div>
                 <p className="text-sm font-medium">{inv.description}</p>
                 <p className="text-xs text-muted-foreground">
-                  {inv.date} · ₹{inv.amount.toLocaleString("en-IN")}
+                  {formatDateDMY(inv.date)} · ₹{inv.amount.toLocaleString("en-IN")}
                   {inv.status === "Partially Paid" && inv.amountPaid !== undefined && (
                     <> · ₹{inv.amountPaid.toLocaleString("en-IN")} paid</>
                   )}

@@ -13,6 +13,7 @@ import {
   Mic,
   Stethoscope,
   StickyNote,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/context/AppStateContext";
@@ -28,6 +29,7 @@ const navItems = [
   { to: "/dashboard/patients", label: "Patients", icon: Users },
   { to: "/dashboard/notifications", label: "Notifications", icon: Bell, badgeKey: "unread" },
   { to: "/dashboard/notes", label: "Notes", icon: StickyNote },
+  { to: "/dashboard/billing", label: "Billing", icon: Receipt },
   { to: "/dashboard/availability", label: "Availability", icon: Clock },
   { to: "/dashboard/broadcast", label: "Broadcast Center", icon: Megaphone },
 ];

@@ -27,6 +27,7 @@ export const PERMISSIONS: Record<Role, string[]> = {
     "Voice-to-Chart",
     "Prescriptions",
     "Treatment Plans",
+    "Billing & Payments",
     "Availability Management",
     "Notifications",
   ],

@@ -69,6 +69,9 @@ export interface Prescription {
   notes: string;
   status: "Draft" | "Sent to Patient";
   signed?: boolean;
+  // Optional because it postdates existing prescriptions/seed data — lets a
+  // doctor see what a past prescription was about when browsing history.
+  diagnosis?: string;
 }
 
 export interface TreatmentPhase {
@@ -87,6 +90,9 @@ export interface TreatmentPlan {
   totalCost: number;
   status: "Proposed" | "Approved" | "In Progress" | "Completed";
   phases: TreatmentPhase[];
+  // Optional because it postdates existing treatment plans/seed data — lets
+  // a doctor see what a past plan was about when browsing history.
+  diagnosis?: string;
 }
 
 export interface MedicalHistory {
@@ -128,6 +134,10 @@ export interface Invoice {
   amount: number;
   status: "Paid" | "Pending" | "Partially Paid" | "Overdue";
   amountPaid?: number;
+  // Set when this invoice was generated from a treatment plan's cost rather
+  // than entered by hand — lets that plan's invoice be kept in sync instead
+  // of duplicated on every edit.
+  treatmentPlanId?: string;
 }
 
 export interface PatientNote {

@@ -12,10 +12,9 @@ import {
 } from "lucide-react";
 import { useAppState, type InvoiceWithPatient } from "@/context/AppStateContext";
 import type { Invoice } from "@/data/mockData";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, formatDateDMY } from "@/lib/utils";
 
 type BillingRow = InvoiceWithPatient;
 
@@ -51,10 +50,17 @@ function statusBadgeVariant(status: Invoice["status"]) {
   }
 }
 
-export default function BillingPayments() {
-  const { patients, invoices, addInvoice, markInvoicePaid, profile } = useAppState();
+function amountPaidFor(row: BillingRow): number {
+  if (row.status === "Paid") return row.amount;
+  if (row.status === "Partially Paid") return row.amountPaid ?? 0;
+  return 0;
+}
+
+export default function BillingCenter() {
+  const { patients, invoices, addInvoice, recordInvoicePayment, profile } = useAppState();
 
   const rows: BillingRow[] = invoices;
+  const patientById = React.useMemo(() => new Map(patients.map((p) => [p.id, p])), [patients]);
 
   const [filter, setFilter] = React.useState<(typeof STATUS_FILTERS)[number]>("All");
   const [receiptRow, setReceiptRow] = React.useState<BillingRow | null>(null);
@@ -65,7 +71,9 @@ export default function BillingPayments() {
   const [newAmount, setNewAmount] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
-  const [payingId, setPayingId] = React.useState<string | null>(null);
+  const [paymentRow, setPaymentRow] = React.useState<BillingRow | null>(null);
+  const [paymentAmount, setPaymentAmount] = React.useState("");
+  const [paySaving, setPaySaving] = React.useState(false);
   const [payError, setPayError] = React.useState<string | null>(null);
 
   const filtered = rows
@@ -73,11 +81,7 @@ export default function BillingPayments() {
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const totalBilled = rows.reduce((sum, r) => sum + r.amount, 0);
-  const totalCollected = rows.reduce((sum, r) => {
-    if (r.status === "Paid") return sum + r.amount;
-    if (r.status === "Partially Paid") return sum + (r.amountPaid ?? 0);
-    return sum;
-  }, 0);
+  const totalCollected = rows.reduce((sum, r) => sum + amountPaidFor(r), 0);
   const totalOutstanding = totalBilled - totalCollected;
   const pendingCount = rows.filter((r) => r.status !== "Paid").length;
 
@@ -105,15 +109,26 @@ export default function BillingPayments() {
     }
   };
 
-  const handleMarkPaid = async (row: BillingRow) => {
-    setPayingId(row.id);
+  const openPaymentDialog = (row: BillingRow) => {
+    const due = row.amount - amountPaidFor(row);
+    setPaymentAmount(due > 0 ? String(due) : "");
+    setPayError(null);
+    setPaymentRow(row);
+  };
+
+  const handleRecordPayment = async () => {
+    if (!paymentRow) return;
+    const amount = parseFloat(paymentAmount);
+    if (!amount || amount <= 0) return;
+    setPaySaving(true);
     setPayError(null);
     try {
-      await markInvoicePaid(row.patientId, row.id);
+      await recordInvoicePayment(paymentRow.patientId, paymentRow.id, amount);
+      setPaymentRow(null);
     } catch (err) {
-      setPayError(err instanceof Error ? err.message : "Could not mark this invoice as paid.");
+      setPayError(err instanceof Error ? err.message : "Could not record this payment.");
     } finally {
-      setPayingId(null);
+      setPaySaving(false);
     }
   };
 
@@ -122,7 +137,7 @@ export default function BillingPayments() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Billing &amp; Payments</h1>
-          <p className="text-sm text-muted-foreground">Administrative payment tracking only — no clinical information.</p>
+          <p className="text-sm text-muted-foreground">Every invoice across the clinic, with what's billed, paid, and still due.</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" /> Generate Invoice
@@ -173,49 +188,66 @@ export default function BillingPayments() {
         ))}
       </div>
 
-      {payError && (
-        <p className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" /> {payError}
-        </p>
+      {filtered.length === 0 ? (
+        <p className="py-16 text-center text-sm text-muted-foreground">No invoices in this view.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-5 py-3">Patient No.</th>
+                <th className="px-5 py-3">Patient</th>
+                <th className="px-5 py-3">Phone</th>
+                <th className="px-5 py-3">Description</th>
+                <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-3">Billed</th>
+                <th className="px-5 py-3">Paid</th>
+                <th className="px-5 py-3">Due</th>
+                <th className="px-5 py-3">Payment Status</th>
+                <th className="px-5 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((row) => {
+                const patient = patientById.get(row.patientId);
+                const paid = amountPaidFor(row);
+                const due = row.amount - paid;
+                return (
+                  <tr key={row.id} className="hover:bg-accent/60">
+                    <td className="px-5 py-3 text-muted-foreground">{patient?.patientNumber ? `#${patient.patientNumber}` : "—"}</td>
+                    <td className="px-5 py-3 font-medium">{row.patientName}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{patient?.phone ?? "—"}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{row.description}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{formatDateDMY(row.date)}</td>
+                    <td className="px-5 py-3">₹{row.amount.toLocaleString("en-IN")}</td>
+                    <td className="px-5 py-3 text-success">₹{paid.toLocaleString("en-IN")}</td>
+                    <td className={cn("px-5 py-3", due > 0 ? "text-destructive" : "text-muted-foreground")}>
+                      ₹{due.toLocaleString("en-IN")}
+                    </td>
+                    <td className="px-5 py-3">
+                      <Badge variant={statusBadgeVariant(row.status)} className="gap-1">
+                        {row.status === "Paid" && <CheckCircle2 className="h-3 w-3" />} {row.status}
+                      </Badge>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        {row.status !== "Paid" && (
+                          <Button size="sm" variant="success" onClick={() => openPaymentDialog(row)}>
+                            <Check className="h-3.5 w-3.5" /> Record Payment
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" onClick={() => openReceipt(row)}>
+                          <Receipt className="h-3.5 w-3.5" /> Receipt
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-
-      <div className="space-y-2">
-        {filtered.map((row) => (
-          <Card key={`${row.patientId}-${row.id}`}>
-            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-              <Avatar className="h-10 w-10 shrink-0">
-                <AvatarFallback className="bg-secondary text-primary">{row.avatarInitials}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold">{row.patientName}</p>
-                  <Badge variant={statusBadgeVariant(row.status)}>{row.status}</Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">{row.description}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {row.date} · ₹{row.amount.toLocaleString("en-IN")}
-                  {row.status === "Partially Paid" && row.amountPaid !== undefined && (
-                    <> · ₹{row.amountPaid.toLocaleString("en-IN")} paid so far</>
-                  )}
-                </p>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                {row.status !== "Paid" && (
-                  <Button size="sm" variant="success" disabled={payingId === row.id} onClick={() => handleMarkPaid(row)}>
-                    <Check className="h-3.5 w-3.5" /> {payingId === row.id ? "Updating..." : "Mark as Paid"}
-                  </Button>
-                )}
-                <Button size="sm" variant="outline" onClick={() => openReceipt(row)}>
-                  <Receipt className="h-3.5 w-3.5" /> Receipt
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-        {filtered.length === 0 && (
-          <p className="py-16 text-center text-sm text-muted-foreground">No invoices in this view.</p>
-        )}
-      </div>
 
       {/* Generate Invoice dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -257,6 +289,45 @@ export default function BillingPayments() {
         </DialogContent>
       </Dialog>
 
+      {/* Record Payment dialog — amount defaults to the full remaining due,
+          so one click covers "mark fully paid," but it's editable for a
+          patient paying only part of what's owed. */}
+      <Dialog open={!!paymentRow} onOpenChange={(open) => !open && setPaymentRow(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            {paymentRow && (
+              <DialogDescription>
+                {paymentRow.patientName} · {paymentRow.description} — ₹{(paymentRow.amount - amountPaidFor(paymentRow)).toLocaleString("en-IN")} due
+                {amountPaidFor(paymentRow) > 0 && ` (₹${amountPaidFor(paymentRow).toLocaleString("en-IN")} already paid)`}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Amount Received (₹)</Label>
+              <Input
+                type="number"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="1500"
+              />
+            </div>
+            {payError && (
+              <p className="flex items-center gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0" /> {payError}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentRow(null)} disabled={paySaving}>Cancel</Button>
+            <Button onClick={handleRecordPayment} disabled={!paymentAmount || parseFloat(paymentAmount) <= 0 || paySaving}>
+              <Check className="h-4 w-4" /> {paySaving ? "Saving..." : "Save Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Receipt dialog */}
       <Dialog open={!!receiptRow} onOpenChange={(open) => !open && setReceiptRow(null)}>
         <DialogContent className="max-w-md">
@@ -277,7 +348,7 @@ export default function BillingPayments() {
                     </div>
                   </div>
                   <div className="text-right text-xs text-muted-foreground">
-                    <p>Date: {receiptRow.date}</p>
+                    <p>Date: {formatDateDMY(receiptRow.date)}</p>
                     <p>Patient: {receiptRow.patientName}</p>
                   </div>
                 </div>

@@ -25,6 +25,7 @@ import { useAppState, type NewPrescriptionInput } from "@/context/AppStateContex
 import { supabase } from "@/lib/supabase";
 import { callEdgeFunction } from "@/lib/orchestrator";
 import { buildPrescriptionPdf, sha256Hex } from "@/lib/prescriptionPdf";
+import { formatDateDMY } from "@/lib/utils";
 import type { Prescription as PrescriptionRecord } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,7 @@ function RxDocument({
           </div>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <p>Date: {date}</p>
+          <p>Date: {formatDateDMY(date)}</p>
           <p>Patient: {patientName}</p>
         </div>
       </div>
@@ -118,7 +119,7 @@ function RxDocument({
             <div className="mt-1 flex items-center justify-end gap-1 text-[11px] font-medium text-success">
               <ShieldCheck className="h-3.5 w-3.5" /> Digitally Signed
             </div>
-            <p className="text-[10px] text-muted-foreground">{fakeSignatureHash(patientName + date)} · {date}</p>
+            <p className="text-[10px] text-muted-foreground">{fakeSignatureHash(patientName + date)} · {formatDateDMY(date)}</p>
           </div>
         ) : (
           <p className="text-[11px] text-muted-foreground">Not yet signed</p>
@@ -138,6 +139,8 @@ export default function Prescription() {
   const [mode, setMode] = React.useState<"edit" | "preview">("edit");
   const [rows, setRows] = React.useState<MedRow[]>([{ ...emptyRow }]);
   const [notes, setNotes] = React.useState("");
+  const [diagnosis, setDiagnosis] = React.useState("");
+  const [historyDateFilter, setHistoryDateFilter] = React.useState("");
   const [signed, setSigned] = React.useState(false);
   const [generating, setGenerating] = React.useState(false);
   const [pdfPath, setPdfPath] = React.useState<string | null>(null);
@@ -241,6 +244,13 @@ export default function Prescription() {
 
   const validMeds = rows.filter((r) => r.name.trim() !== "");
 
+  // Most recent first, regardless of the order local state happens to hold
+  // after edits/inserts, then optionally narrowed to one exact visit date.
+  const sortedPrescriptions = patient.prescriptions
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .filter((rx) => !historyDateFilter || rx.date === historyDateFilter);
+
   const goToPreview = () => {
     if (validMeds.length === 0) return;
     setMode("preview");
@@ -292,6 +302,7 @@ export default function Prescription() {
         signed,
         pdfStoragePath: pdfPath ?? undefined,
         pdfSha256: pdfHash ?? undefined,
+        diagnosis: diagnosis.trim() || undefined,
       };
       if (editingRxId) {
         await updatePrescription(patient.id, editingRxId, payload);
@@ -319,6 +330,7 @@ export default function Prescription() {
         signed,
         pdfStoragePath: pdfPath ?? undefined,
         pdfSha256: pdfHash ?? undefined,
+        diagnosis: diagnosis.trim() || undefined,
       };
       if (editingRxId) {
         await updatePrescription(patient.id, editingRxId, payload);
@@ -336,6 +348,7 @@ export default function Prescription() {
   const loadDraftForEdit = (rx: PrescriptionRecord) => {
     setRows(rx.medicines.length ? rx.medicines.map((m) => ({ ...m })) : [{ ...emptyRow }]);
     setNotes(rx.notes ?? "");
+    setDiagnosis(rx.diagnosis ?? "");
     setSigned(!!rx.signed);
     setEditingRxId(rx.id);
     setPdfPath(null);
@@ -373,6 +386,7 @@ export default function Prescription() {
   const resetForm = () => {
     setRows([{ ...emptyRow }]);
     setNotes("");
+    setDiagnosis("");
     setSigned(false);
     setPdfPath(null);
     setPdfHash(null);
@@ -496,6 +510,14 @@ export default function Prescription() {
                   </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Diagnosis</Label>
+                  <Input
+                    value={diagnosis}
+                    onChange={(e) => setDiagnosis(e.target.value)}
+                    placeholder="e.g. Dentin hypersensitivity"
+                  />
+                </div>
                 {rows.map((row, i) => (
                   <div key={i} className="rounded-lg border border-border p-4">
                     <div className="mb-3 flex items-center justify-between">
@@ -596,11 +618,26 @@ export default function Prescription() {
         </TabsContent>
 
         <TabsContent value="history" className="space-y-3 no-print">
-          {patient.prescriptions.map((rx) => (
+          {patient.prescriptions.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="rx-date-filter" className="text-xs text-muted-foreground shrink-0">Filter by date</Label>
+              <Input
+                id="rx-date-filter"
+                type="date"
+                value={historyDateFilter}
+                onChange={(e) => setHistoryDateFilter(e.target.value)}
+                className="h-8 w-auto"
+              />
+              {historyDateFilter && (
+                <Button variant="ghost" size="sm" onClick={() => setHistoryDateFilter("")}>Clear</Button>
+              )}
+            </div>
+          )}
+          {sortedPrescriptions.map((rx) => (
             <Card key={rx.id}>
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">{rx.date}</p>
+                  <p className="text-sm font-semibold">{formatDateDMY(rx.date)}</p>
                   <div className="flex items-center gap-2">
                     {rx.signed && (
                       <Badge variant="outline" className="gap-1 text-success">
@@ -610,6 +647,7 @@ export default function Prescription() {
                     <Badge variant={rx.status === "Sent to Patient" ? "success" : "muted"}>{rx.status}</Badge>
                   </div>
                 </div>
+                {rx.diagnosis && <p className="mt-0.5 text-xs text-muted-foreground">{rx.diagnosis}</p>}
                 <div className="mt-3 space-y-2">
                   {rx.medicines.map((m, idx) => (
                     <div key={idx} className="rounded-md bg-muted/50 p-3 text-sm">
@@ -647,6 +685,9 @@ export default function Prescription() {
           ))}
           {patient.prescriptions.length === 0 && (
             <p className="py-10 text-center text-sm text-muted-foreground">No prescriptions issued yet.</p>
+          )}
+          {patient.prescriptions.length > 0 && sortedPrescriptions.length === 0 && (
+            <p className="py-10 text-center text-sm text-muted-foreground">No prescriptions on this date.</p>
           )}
         </TabsContent>
       </Tabs>

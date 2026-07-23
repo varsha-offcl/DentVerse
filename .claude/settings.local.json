@@ -23,7 +23,9 @@
       "Bash(curl -s -o /tmp/resp2.json -w \"HTTP %{http_code}\\\\n\" -X POST \"https://excvhqrtamzoiyksjuko.supabase.co/functions/v1/voice-to-chart-transcribe\" -H \"Authorization: Bearer not-a-real-token\")",
       "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy voice-to-chart-structure)",
       "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy prescription-structure)",
-      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy treatment-plan-structure)"
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest functions deploy treatment-plan-structure)",
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest migration list)",
+      "Bash(SUPABASE_ACCESS_TOKEN=$\\(cat .supabase-access-token\\) npx --yes supabase@latest db push)"
     ]
   }
 }

@@ -175,6 +175,7 @@ export interface NewPrescriptionInput {
   signed: boolean;
   pdfStoragePath?: string;
   pdfSha256?: string;
+  diagnosis?: string;
 }
 
 export interface NewTreatmentPlanInput {
@@ -182,6 +183,7 @@ export interface NewTreatmentPlanInput {
   totalCost: number;
   status: TreatmentPlan["status"];
   phases: { name: string; procedure: string; cost: number; status: TreatmentPhase["status"]; estDate: string }[];
+  diagnosis?: string;
 }
 
 export interface NewInvoiceInput {
@@ -381,6 +383,7 @@ function mapPrescriptionRow(row: any): Prescription {
     notes: row.notes ?? "",
     status: row.status,
     signed: row.signed ?? false,
+    diagnosis: row.diagnosis ?? undefined,
   };
 }
 
@@ -400,6 +403,7 @@ function mapTreatmentPlanRow(row: any): TreatmentPlan {
       status: ph.status,
       estDate: ph.est_date,
     })),
+    diagnosis: row.diagnosis ?? undefined,
   };
 }
 
@@ -434,6 +438,7 @@ function mapInvoiceRow(row: any): InvoiceWithPatient {
     amount: Number(row.amount) || 0,
     amountPaid: row.amount_paid === null || row.amount_paid === undefined ? undefined : Number(row.amount_paid),
     status: row.status,
+    treatmentPlanId: row.treatment_plan_id ?? undefined,
   };
 }
 
@@ -496,7 +501,7 @@ function mapSystemLogRow(row: any): SystemLogEntry {
 }
 
 // Derived, not stored: a patient's balance due and invoice list come
-// from the tenant-wide invoices list, so BillingPayments (needs every
+// from the tenant-wide invoices list, so BillingCenter (needs every
 // invoice across the whole clinic) and each Patient Workspace's Invoice
 // widget (needs just that patient's slice) always agree with each other.
 function withDerivedBalanceAndInvoices(patients: Patient[], invoices: InvoiceWithPatient[]): Patient[] {
@@ -610,6 +615,7 @@ interface AppStateContextValue {
     noteId: string,
     patch: { title: string; soap: ChartNote["soap"]; status: ChartNoteStatus }
   ) => Promise<ChartNote>;
+  deleteChartNote: (patientId: string, noteId: string) => Promise<void>;
   addPatientNote: (patientId: string, note: NewPatientNoteInput) => Promise<PatientNote>;
   updatePatientNote: (patientId: string, noteId: string, content: string) => Promise<PatientNote>;
   togglePinPatientNote: (patientId: string, noteId: string, pinned: boolean) => Promise<PatientNote>;
@@ -626,7 +632,7 @@ interface AppStateContextValue {
 
   invoices: InvoiceWithPatient[];
   addInvoice: (patientId: string, invoice: NewInvoiceInput) => Promise<Invoice>;
-  markInvoicePaid: (patientId: string, invoiceId: string) => Promise<void>;
+  recordInvoicePayment: (patientId: string, invoiceId: string, paymentAmount: number) => Promise<void>;
 
   widgetLayout: WidgetLayoutItem[];
   setWidgetLayout: (layout: WidgetLayoutItem[]) => void;
@@ -900,19 +906,30 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   // Workspace opens, not eagerly for the whole clinic at login.
   const loadPatientClinicalData = React.useCallback(async (patientId: string) => {
     const [chartRes, notesRes, rxRes, planRes, imagesRes, reportsRes] = await Promise.all([
-      supabase.from("chart_notes").select("*").eq("patient_id", patientId).order("date", { ascending: false }),
+      supabase
+        .from("chart_notes")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false }),
       supabase
         .from("patient_notes")
         .select("*")
         .eq("patient_id", patientId)
         .order("pinned", { ascending: false })
         .order("created_at", { ascending: false }),
-      supabase.from("prescriptions").select("*").eq("patient_id", patientId).order("date", { ascending: false }),
+      supabase
+        .from("prescriptions")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false }),
       supabase
         .from("treatment_plans")
         .select("*, treatment_plan_phases ( * )")
         .eq("patient_id", patientId)
-        .order("created_on", { ascending: false }),
+        .order("created_on", { ascending: false })
+        .order("created_at", { ascending: false }),
       supabase.from("patient_images").select("*").eq("patient_id", patientId).order("uploaded_at", { ascending: false }),
       supabase.from("patient_reports").select("*").eq("patient_id", patientId).order("uploaded_at", { ascending: false }),
     ]);
@@ -1224,6 +1241,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return note;
   };
 
+  const deleteChartNote = async (patientId: string, noteId: string): Promise<void> => {
+    const { error } = await supabase.from("chart_notes").delete().eq("id", noteId);
+    if (error) throw error;
+    setPatients((prev) =>
+      prev.map((p) => (p.id === patientId ? { ...p, chartNotes: p.chartNotes.filter((n) => n.id !== noteId) } : p))
+    );
+  };
+
   // Pinned notes first, newest first within each group — the one order
   // the list is ever shown in, so every mutation below re-sorts to it
   // rather than trusting whatever order local state happened to be in.
@@ -1300,6 +1325,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         signed: draft.signed,
         pdf_storage_path: draft.pdfStoragePath ?? null,
         pdf_sha256: draft.pdfSha256 ?? null,
+        diagnosis: draft.diagnosis ?? null,
       })
       .select()
       .single();
@@ -1319,6 +1345,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         signed: patch.signed,
         pdf_storage_path: patch.pdfStoragePath ?? null,
         pdf_sha256: patch.pdfSha256 ?? null,
+        diagnosis: patch.diagnosis ?? null,
       })
       .eq("id", rxId)
       .select()
@@ -1331,6 +1358,58 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       )
     );
     return rx;
+  };
+
+  // A treatment plan's totalCost becomes a real charge once it's actually
+  // approved — a "Proposed" draft is still just an estimate, not something
+  // to bill for. One invoice per plan (tracked via treatment_plan_id):
+  // re-approving, editing phases, or changing totalCost all update that
+  // same invoice instead of creating duplicates.
+  const syncInvoiceForTreatmentPlan = async (patientId: string, plan: TreatmentPlan) => {
+    if (!profile || plan.status === "Proposed") return;
+
+    const description = `Treatment Plan — ${plan.title}`;
+    const existing = invoices.find((inv) => inv.treatmentPlanId === plan.id);
+
+    if (existing) {
+      if (existing.amount === plan.totalCost && existing.description === description) return;
+      const { data, error } = await supabase
+        .from("invoices")
+        .update({ amount: plan.totalCost, description })
+        .eq("id", existing.id)
+        .select("*, patients ( name )")
+        .single();
+      if (error) throw error;
+      const updated = mapInvoiceRow(data);
+      let nextInvoices: InvoiceWithPatient[] = [];
+      setInvoices((prev) => {
+        nextInvoices = prev.map((inv) => (inv.id === updated.id ? updated : inv));
+        return nextInvoices;
+      });
+      setPatients((prevPatients) => withDerivedBalanceAndInvoices(prevPatients, nextInvoices));
+    } else {
+      const { data, error } = await supabase
+        .from("invoices")
+        .insert({
+          tenant_id: profile.tenantId,
+          patient_id: patientId,
+          treatment_plan_id: plan.id,
+          date: new Date().toISOString().slice(0, 10),
+          description,
+          amount: plan.totalCost,
+          status: "Pending",
+        })
+        .select("*, patients ( name )")
+        .single();
+      if (error) throw error;
+      const created = mapInvoiceRow(data);
+      let nextInvoices: InvoiceWithPatient[] = [];
+      setInvoices((prev) => {
+        nextInvoices = [created, ...prev];
+        return nextInvoices;
+      });
+      setPatients((prevPatients) => withDerivedBalanceAndInvoices(prevPatients, nextInvoices));
+    }
   };
 
   const addTreatmentPlan = async (patientId: string, draft: NewTreatmentPlanInput): Promise<TreatmentPlan> => {
@@ -1349,6 +1428,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         status: ph.status,
         est_date: ph.estDate,
       })),
+      p_diagnosis: draft.diagnosis ?? null,
     });
     if (error) throw error;
 
@@ -1361,6 +1441,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     const plan = mapTreatmentPlanRow(row);
     setPatients((prev) => prev.map((p) => (p.id === patientId ? { ...p, treatmentPlans: [plan, ...p.treatmentPlans] } : p)));
+    await syncInvoiceForTreatmentPlan(patientId, plan);
     return plan;
   };
 
@@ -1381,6 +1462,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         status: ph.status,
         est_date: ph.estDate,
       })),
+      p_diagnosis: draft.diagnosis ?? null,
     });
     if (error) throw error;
 
@@ -1397,6 +1479,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         p.id === patientId ? { ...p, treatmentPlans: p.treatmentPlans.map((tp) => (tp.id === planId ? plan : tp)) } : p
       )
     );
+    await syncInvoiceForTreatmentPlan(patientId, plan);
     return plan;
   };
 
@@ -1410,6 +1493,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           : p
       )
     );
+    const plan = patients.find((p) => p.id === patientId)?.treatmentPlans.find((tp) => tp.id === planId);
+    if (plan) await syncInvoiceForTreatmentPlan(patientId, { ...plan, status });
   };
 
   const addPatientImage = async (patientId: string, file: File, category: ImageCategory): Promise<PatientImage> => {
@@ -1529,12 +1614,33 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return invoice;
   };
 
-  const markInvoicePaid = async (_patientId: string, invoiceId: string) => {
-    const { error } = await supabase.from("invoices").update({ status: "Paid", amount_paid: null }).eq("id", invoiceId);
+  // Payment amount is cumulative — a partial payment adds to whatever was
+  // already paid on this invoice, and only flips the invoice to "Paid" once
+  // the running total covers the full amount. Covers both "record a partial
+  // payment" and "mark fully paid" (pay the full remaining due) in one call.
+  const recordInvoicePayment = async (_patientId: string, invoiceId: string, paymentAmount: number): Promise<void> => {
+    const existing = invoices.find((inv) => inv.id === invoiceId);
+    if (!existing) throw new Error("Invoice not found.");
+    const alreadyPaid = existing.status === "Paid" ? existing.amount : existing.amountPaid ?? 0;
+    const totalPaid = Math.max(0, alreadyPaid + paymentAmount);
+    const isFullyPaid = totalPaid >= existing.amount;
+
+    const { error } = await supabase
+      .from("invoices")
+      .update({
+        status: isFullyPaid ? "Paid" : "Partially Paid",
+        amount_paid: isFullyPaid ? null : totalPaid,
+      })
+      .eq("id", invoiceId);
     if (error) throw error;
+
     let nextInvoices: InvoiceWithPatient[] = [];
     setInvoices((prev) => {
-      nextInvoices = prev.map((inv) => (inv.id === invoiceId ? { ...inv, status: "Paid" as const, amountPaid: undefined } : inv));
+      nextInvoices = prev.map((inv) =>
+        inv.id === invoiceId
+          ? { ...inv, status: isFullyPaid ? ("Paid" as const) : ("Partially Paid" as const), amountPaid: isFullyPaid ? undefined : totalPaid }
+          : inv
+      );
       return nextInvoices;
     });
     setPatients((prevPatients) => withDerivedBalanceAndInvoices(prevPatients, nextInvoices));
@@ -1616,6 +1722,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     loadPatientClinicalData,
     addChartNote,
     updateChartNote,
+    deleteChartNote,
     addPatientNote,
     updatePatientNote,
     togglePinPatientNote,
@@ -1631,7 +1738,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     removePatientReport,
     invoices,
     addInvoice,
-    markInvoicePaid,
+    recordInvoicePayment,
     widgetLayout,
     setWidgetLayout,
     saveWidgetLayout,

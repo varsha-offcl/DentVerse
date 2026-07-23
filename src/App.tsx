@@ -31,7 +31,6 @@ import ReceptionRequests from "@/pages/reception/Requests";
 import RescheduleRequests from "@/pages/reception/RescheduleRequests";
 import CancellationRequests from "@/pages/reception/CancellationRequests";
 import PatientSearch from "@/pages/reception/PatientSearch";
-import BillingPayments from "@/pages/reception/BillingPayments";
 
 // Admin
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -45,6 +44,7 @@ import CommunicationCenter from "@/pages/shared/CommunicationCenter";
 import BroadcastCenter from "@/pages/shared/BroadcastCenter";
 import ProfilePage from "@/pages/shared/ProfilePage";
 import AccountSettingsPage from "@/pages/shared/AccountSettingsPage";
+import BillingCenter from "@/pages/shared/BillingCenter";
 
 export default function App() {
   return (
@@ -65,6 +65,7 @@ export default function App() {
             <Route path="/dashboard/notifications" element={<Notifications />} />
             <Route path="/dashboard/availability" element={<Availability />} />
             <Route path="/dashboard/notes" element={<DoctorNotes />} />
+            <Route path="/dashboard/billing" element={<BillingCenter />} />
             <Route path="/dashboard/broadcast" element={<BroadcastCenter />} />
             <Route path="/dashboard/communication" element={<CommunicationCenter />} />
             <Route path="/dashboard/profile" element={<ProfilePage />} />
@@ -86,7 +87,7 @@ export default function App() {
             <Route path="/reception/reschedule" element={<RescheduleRequests />} />
             <Route path="/reception/cancellations" element={<CancellationRequests />} />
             <Route path="/reception/patients" element={<PatientSearch />} />
-            <Route path="/reception/billing" element={<BillingPayments />} />
+            <Route path="/reception/billing" element={<BillingCenter />} />
             <Route path="/reception/communication" element={<CommunicationCenter />} />
             <Route path="/reception/broadcast" element={<BroadcastCenter />} />
             <Route path="/reception/notifications" element={<Notifications />} />

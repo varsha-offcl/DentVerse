@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
+import { cn, formatDateDMY } from "@/lib/utils";
 import type { TreatmentPhase, TreatmentPlan } from "@/data/mockData";
 
 type PhaseRow = { name: string; procedure: string; cost: string; estDate: string };
@@ -87,7 +87,7 @@ function PlanPhaseTimeline({ phases }: { phases: TreatmentPhase[] }) {
                 <Badge variant="outline" className={cn("capitalize", meta.className)}>{phase.status}</Badge>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {phase.cost > 0 ? `₹${phase.cost.toLocaleString("en-IN")}` : "Included"} · Est. {phase.estDate}
+                {phase.cost > 0 ? `₹${phase.cost.toLocaleString("en-IN")}` : "Included"} · Est. {phase.estDate === "TBD" ? "TBD" : formatDateDMY(phase.estDate)}
               </p>
             </div>
           </div>
@@ -106,6 +106,8 @@ export default function TreatmentPlanPage() {
   const [activeTab, setActiveTab] = React.useState("active");
   const [mode, setMode] = React.useState<"edit" | "preview">("edit");
   const [title, setTitle] = React.useState("");
+  const [diagnosis, setDiagnosis] = React.useState("");
+  const [historyDateFilter, setHistoryDateFilter] = React.useState("");
   const [phases, setPhases] = React.useState<PhaseRow[]>([{ ...emptyPhase }]);
   const [approved, setApproved] = React.useState(false);
   const [sending, setSending] = React.useState(false);
@@ -203,6 +205,13 @@ export default function TreatmentPlanPage() {
   const validPhases = phases.filter((p) => p.name.trim() !== "");
   const totalCost = phases.reduce((sum, p) => sum + (parseFloat(p.cost) || 0), 0);
 
+  // Most recent first, regardless of the order local state happens to hold
+  // after edits/inserts, then optionally narrowed to one exact visit date.
+  const sortedTreatmentPlans = patient.treatmentPlans
+    .slice()
+    .sort((a, b) => b.createdOn.localeCompare(a.createdOn))
+    .filter((plan) => !historyDateFilter || plan.createdOn === historyDateFilter);
+
   const goToPreview = () => {
     if (validPhases.length === 0 || !title.trim()) return;
     setMode("preview");
@@ -230,6 +239,7 @@ export default function TreatmentPlanPage() {
         totalCost,
         status: "Proposed",
         phases: buildPhasesPayload(),
+        diagnosis: diagnosis.trim() || undefined,
       };
       if (editingPlanId) {
         await updateTreatmentPlan(patient.id, editingPlanId, payload);
@@ -255,6 +265,7 @@ export default function TreatmentPlanPage() {
         totalCost,
         status: "Approved",
         phases: buildPhasesPayload(),
+        diagnosis: diagnosis.trim() || undefined,
       };
       if (editingPlanId) {
         await updateTreatmentPlan(patient.id, editingPlanId, payload);
@@ -271,6 +282,7 @@ export default function TreatmentPlanPage() {
 
   const resetForm = () => {
     setTitle("");
+    setDiagnosis("");
     setPhases([{ ...emptyPhase }]);
     setApproved(false);
     setMode("edit");
@@ -284,6 +296,7 @@ export default function TreatmentPlanPage() {
 
   const loadPlanForEdit = (plan: TreatmentPlan) => {
     setTitle(plan.title);
+    setDiagnosis(plan.diagnosis ?? "");
     setPhases(
       plan.phases.length
         ? plan.phases.map((p) => ({ name: p.name, procedure: p.procedure, cost: String(p.cost), estDate: p.estDate }))
@@ -337,12 +350,27 @@ export default function TreatmentPlanPage() {
 
         <TabsContent value="active" className="space-y-4">
           {approveError && <p className="text-sm text-destructive">{approveError}</p>}
-          {patient.treatmentPlans.map((plan) => (
+          {patient.treatmentPlans.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="tp-date-filter" className="text-xs text-muted-foreground shrink-0">Filter by date</Label>
+              <Input
+                id="tp-date-filter"
+                type="date"
+                value={historyDateFilter}
+                onChange={(e) => setHistoryDateFilter(e.target.value)}
+                className="h-8 w-auto"
+              />
+              {historyDateFilter && (
+                <Button variant="ghost" size="sm" onClick={() => setHistoryDateFilter("")}>Clear</Button>
+              )}
+            </div>
+          )}
+          {sortedTreatmentPlans.map((plan) => (
             <Card key={plan.id}>
               <CardHeader className="flex-row items-start justify-between space-y-0">
                 <div>
                   <CardTitle>{plan.title}</CardTitle>
-                  <CardDescription>Created {plan.createdOn}</CardDescription>
+                  <CardDescription>Created {formatDateDMY(plan.createdOn)}{plan.diagnosis ? ` · ${plan.diagnosis}` : ""}</CardDescription>
                 </div>
                 <Badge variant={planBadgeVariant(plan.status)}>{plan.status}</Badge>
               </CardHeader>
@@ -386,6 +414,9 @@ export default function TreatmentPlanPage() {
           ))}
           {patient.treatmentPlans.length === 0 && (
             <p className="py-10 text-center text-sm text-muted-foreground">No treatment plans yet. Create one in the "New Plan" tab.</p>
+          )}
+          {patient.treatmentPlans.length > 0 && sortedTreatmentPlans.length === 0 && (
+            <p className="py-10 text-center text-sm text-muted-foreground">No treatment plans on this date.</p>
           )}
         </TabsContent>
 
@@ -478,6 +509,10 @@ export default function TreatmentPlanPage() {
                 <div className="space-y-1.5">
                   <Label>Plan Title</Label>
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Dental Implant — Tooth #14" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Diagnosis</Label>
+                  <Input value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Missing tooth #14, needs restoration" />
                 </div>
 
                 {phases.map((phase, i) => (
